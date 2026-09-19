@@ -1,16 +1,20 @@
 const jwt = require("jsonwebtoken");
 
 function extractToken(req) {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-        return authHeader.split(" ")[1];
-    }
+    // 1. Check Authorization header (standard for Mobile/API clients: Bearer <token>)
+    const authHeader = req.headers.authorization || req.headers.token;
     if (authHeader) {
-        return authHeader;
+        if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+            return authHeader.split(" ")[1].trim();
+        }
+        return typeof authHeader === "string" ? authHeader.trim() : authHeader;
     }
-    if (req.cookies && req.cookies.token) {
-        return req.cookies.token;
+
+    // 2. Check Cookie (standard for Web/Browser clients)
+    if (req.cookies && (req.cookies.token || req.cookies.accessToken)) {
+        return (req.cookies.token || req.cookies.accessToken).trim();
     }
+
     return null;
 }
 
@@ -117,6 +121,7 @@ function verifyThree(req, res, next) {
 
 module.exports = {
     extractToken,
+    authMiddleware: verifyThree,
     verifyAdmin,
     verifyStaff,
     verifyCustomer,
