@@ -252,14 +252,14 @@ export function Navbar() {
             {/* RESPONSIVE NAVIGATION LINKS (Adaptive for Tablet & Desktop) */}
             <nav className="hidden md:flex items-center gap-4 lg:gap-7 xl:gap-8">
               {/* Primary Links always visible on Tablet & Desktop */}
-              <a
+              <Link
                 href="/"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group"
               >
                 Home
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/menu"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
@@ -268,8 +268,8 @@ export function Navbar() {
                   Hot
                 </span>
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/combos"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
@@ -278,23 +278,19 @@ export function Navbar() {
                   Feasts
                 </span>
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/reserve"
-                className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group"
+                className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
-                Dinning
+                <span>Dining</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold hidden xl:inline-block">
+                  Reserve
+                </span>
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a>
+              </Link>
 
               {/* Secondary links (Visible on large screens, or clean tablet spacing) */}
-              {/* <a
-                href="/#special"
-                className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden lg:inline-block"
-              >
-                Special Deals
-                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a> */}
               <a
                 href="/#about"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden xl:inline-block"
@@ -306,7 +302,7 @@ export function Navbar() {
                 href="/#contact-section"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden lg:inline-block"
               >
-                ContactUs
+                Contact Us
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
               </a>
             </nav>
@@ -1131,7 +1127,7 @@ export function Navbar() {
             {mobileNavItems.map((item) => {
               const IconComp = item.icon;
               return (
-                <a
+                <Link
                   key={item.name}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
@@ -1151,7 +1147,7 @@ export function Navbar() {
                     )}
                     <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
                   </div>
-                </a>
+                </Link>
               );
             })}
           </div>
