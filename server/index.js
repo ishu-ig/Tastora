@@ -58,10 +58,10 @@ app.use("/api", Router);
 
 // ---------------- React Build ----------------
 
-app.use(express.static(path.join(__dirname, "client/build")));
+app.use(express.static(path.join(__dirname, "admin/build")));
 
 app.get("/{*splat}", (req, res) => {
-    res.sendFile(path.join(__dirname, "client/build", "index.html"));
+    res.sendFile(path.join(__dirname, "admin/build", "index.html"));
 });
 
 // ---------------- Start Server ----------------
