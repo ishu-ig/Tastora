@@ -48,11 +48,11 @@ app.get("/api/health", (req, res) => {
 // ── React build (optional) ───────────────────────────────────────────────────
 // Served only if a build exists. Default: server/client/build.
 // If your React app is a sibling folder, set CLIENT_BUILD_PATH=../client/build
-const buildPath = path.resolve(
-    __dirname,
-    process.env.CLIENT_BUILD_PATH || "admin/build"
-);
-const indexHtml = path.join(buildPath, "index.html");
+app.use(express.static(path.join(__dirname, "client/build")));
+
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "client/build", "index.html"));
+});
 
 if (fs.existsSync(indexHtml)) {
     app.use(express.static(buildPath));
