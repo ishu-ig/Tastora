@@ -19,11 +19,8 @@ const whitelist = [
     "http://localhost:3000",
     "http://localhost:4000",
     "http://localhost:8000",
-    "https://easy-dine-iota.vercel.app",
-    "https://easydine-86b9.onrender.com",
+    "https://tastora-seven.vercel.app",
     "https://tastora.onrender.com",
-    "https://admin-easydine.ishaanportfolio.com",
-    "https://easydine.ishaanportfolio.com"
 ];
 
 const corsOptions = {
