@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: tastora-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_Key
+        sync: false
+      - key: JWT_SECRET_KEY_ADMIN
+        sync: false
+      - key: JWT_SECRET_KEY_CUSTOMER
+        sync: false
+      - key: JWT_SECRET_KEY_STAFF
+        sync: false
+      - key: JWT_SECRET_KEY_DELIVERYBOY
+        sync: false
+
+  - type: web
+    name: tastora-admin
+    runtime: static
+    rootDir: admin
+    buildCommand: npm ci && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_BACKEND_SERVER
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
