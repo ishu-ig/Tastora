@@ -2,242 +2,17 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { fullMenuCatalog } from "../app/menu/page";
+import { useAuth } from "./AuthContext";
+import api from "../lib/axiosIntance";
 
 const CartContext = createContext(null);
 
-// Initial mock addresses
-const initialAddresses = [
-  {
-    id: "addr-1",
-    tag: "Home",
-    isDefault: true,
-    recipientName: "Ishaan Sharma",
-    phone: "+1 (555) 234-5678",
-    addressLine: "Flat 4B, Emerald Heights, 42 Flavor Street",
-    landmark: "Opposite Central Botanical Garden",
-    city: "New York",
-    zipCode: "10001",
-    type: "home",
-  },
-  {
-    id: "addr-2",
-    tag: "Office",
-    isDefault: false,
-    recipientName: "Ishaan Sharma",
-    phone: "+1 (555) 234-5678",
-    addressLine: "Suite 1400, Tech Innovation Tower, 750 7th Ave",
-    landmark: "Near Times Square Metro Station",
-    city: "New York",
-    zipCode: "10036",
-    type: "work",
-  },
-];
-
-// Initial mock orders history with diverse modes (Delivery, Takeaway, Dine-In) and active tracking
-const initialOrders = [
-  {
-    id: "ORD-98421",
-    date: "Today, 01:15 PM",
-    orderMode: "delivery",
-    status: "In Kitchen",
-    statusColor: "orange",
-    eta: "20-25 mins",
-    currentStep: 2, // 1: Confirmed, 2: In Kitchen, 3: Picked Up, 4: Delivered
-    items: [
-      { id: "ni-1", title: "Paneer Tikka Charcoal Skewers", price: 14.99, quantity: 2, image: "/img/category/paneer-tikka.jpg", note: "Medium spicy, mint chutney" },
-      { id: "ni-8", title: "Butter Garlic Naan", price: 4.49, quantity: 3, image: "/img/category/dal-makhani.jpg" },
-      { id: "ds-1", title: "Warm Shahi Gulab Jamun (2 Pcs)", price: 6.99, quantity: 1, image: "/img/category/gulab-jamun.jpg" },
-    ],
-    itemTotal: 43.45,
-    discount: 5.0,
-    couponApplied: "FIRSTDEL",
-    deliveryFee: 0.0,
-    taxes: 3.47,
-    tip: 3.0,
-    total: 44.92,
-    deliveryAddress: "Flat 4B, Emerald Heights, 42 Flavor Street, NY 10001",
-    deliveryInstruction: "Leave at door",
-    paymentMethod: "UPI (Google Pay)",
-    ratingGiven: null,
-    driverName: "Rajesh Kumar",
-    driverPhone: "+1 (555) 345-9876",
-  },
-  {
-    id: "ORD-87319",
-    date: "Yesterday, 08:30 PM",
-    orderMode: "dinein",
-    tableNumber: "Table 07",
-    status: "Delivered",
-    statusColor: "emerald",
-    currentStep: 4,
-    items: [
-      { id: "tc-1", title: "Royal Maharaja Grand Thali", price: 19.99, quantity: 2, image: "/img/category/royal-thali.jpg", note: "Extra butter on rotis" },
-      { id: "bv-1", title: "Royal Amritsari Malai Lassi", price: 5.99, quantity: 2, image: "/img/category/beverage-lassi.jpg" },
-    ],
-    itemTotal: 51.96,
-    discount: 10.0,
-    couponApplied: "PUREVEG50",
-    deliveryFee: 0.0,
-    taxes: 3.77,
-    tip: 0.0,
-    total: 45.73,
-    deliveryAddress: "Dine-In Table 07 (Main Dining Hall)",
-    paymentMethod: "Credit Card (•••• 4242)",
-    ratingGiven: 5,
-    feedback: "The Thali was truly grand and fresh! Outstanding paneer and warm dal makhani.",
-  },
-  {
-    id: "ORD-76204",
-    date: "08 Sep 2026, 07:45 PM",
-    orderMode: "takeaway",
-    pickupTime: "Ready in 20 mins",
-    status: "Delivered",
-    statusColor: "emerald",
-    currentStep: 4,
-    items: [
-      { id: "ff-1", title: "Double Truffle Smash Burger", price: 14.99, quantity: 1, image: "/img/menu/1.jpg" },
-      { id: "ff-3", title: "Margherita Royale Sourdough Pizza", price: 19.99, quantity: 1, image: "/img/menu/2.jpg" },
-      { id: "ds-2", title: "Nutella Molten Lava Cake", price: 8.99, quantity: 1, image: "/img/menu/5.jpg" },
-    ],
-    itemTotal: 43.97,
-    discount: 6.60,
-    couponApplied: "FEAST20",
-    deliveryFee: 0.0,
-    taxes: 3.18,
-    tip: 0.0,
-    total: 40.55,
-    deliveryAddress: "Pickup Counter #2 (42 Flavor Street, NY)",
-    paymentMethod: "Apple Pay",
-    ratingGiven: 5,
-    feedback: "Crispy crust and sizzling hot burgers when picked up!",
-  },
-  {
-    id: "ORD-65192",
-    date: "28 Aug 2026, 01:30 PM",
-    orderMode: "delivery",
-    status: "Delivered",
-    statusColor: "emerald",
-    currentStep: 4,
-    items: [
-      { id: "si-1", title: "Mysore Butter Masala Dosa", price: 12.99, quantity: 2, image: "/img/category/south-indian.jpg" },
-      { id: "si-2", title: "Steamed Ghee Idli & Medu Vada", price: 9.99, quantity: 1, image: "/img/category/south-indian.jpg" },
-      { id: "bv-3", title: "Masala Kulhad Chai (Hot)", price: 3.99, quantity: 2, image: "/img/category/beverage-lassi.jpg" },
-    ],
-    itemTotal: 43.95,
-    discount: 0.0,
-    deliveryFee: 0.0,
-    taxes: 3.73,
-    tip: 2.0,
-    total: 49.68,
-    deliveryAddress: "Suite 1400, Tech Innovation Tower, NY 10036",
-    paymentMethod: "Net Banking (Chase)",
-    ratingGiven: 4,
-  },
-];
-
-// Initial mock reservations history with active and past dining experiences
-const initialReservations = [
-  {
-    id: "RES-78219",
-    type: "reservation",
-    date: "Tonight, 08:00 PM – 09:00 PM",
-    bookingDate: "Today",
-    status: "Confirmed",
-    statusColor: "emerald",
-    zone: "The Royal Courtyard",
-    zoneImage: "/img/dining/royal-courtyard.jpg",
-    guests: 4,
-    slots: ["08:00 PM - 09:00 PM"],
-    occasion: "Anniversary Celebration 🎂",
-    dietary: "Strict Jain / Pure Satvik 🌿",
-    addOns: [
-      "Royal Saffron Shahi Thandai Welcome",
-      "Fresh Rose Bouquet & Tabletop Candlelight Setup",
-    ],
-    tableNumber: "Table #12 (Courtyard Fountain View)",
-    guestName: "Ishaan Sharma",
-    guestPhone: "+1 (555) 234-5678",
-    guestEmail: "ishaan.sharma@example.com",
-    specialNotes: "Please arrange candle-light setup near the live sitar stage.",
-    coverPricePerGuest: 20.0,
-    addOnTotal: 42.0,
-    taxes: 8.5,
-    total: 130.5,
-    depositPaid: 130.5,
-    paymentMethod: "Net Banking (Chase)",
-    ratingGiven: null,
-  },
-  {
-    id: "RES-65410",
-    type: "reservation",
-    date: "10 Sep 2026, 01:00 PM – 02:00 PM",
-    bookingDate: "10 Sep 2026",
-    status: "Completed",
-    statusColor: "emerald",
-    zone: "Starlit Rooftop Terrace",
-    zoneImage: "/img/dining/rooftop-terrace.jpg",
-    guests: 2,
-    slots: ["01:00 PM - 02:00 PM"],
-    occasion: "Casual Dining",
-    dietary: "Standard Pure Veg",
-    addOns: ["Chef's Eggless Belgian Truffle Cake (500g)"],
-    tableNumber: "Table #04 (Skyline View)",
-    guestName: "Ishaan Sharma",
-    guestPhone: "+1 (555) 234-5678",
-    guestEmail: "ishaan.sharma@example.com",
-    specialNotes: "",
-    coverPricePerGuest: 20.0,
-    addOnTotal: 24.0,
-    taxes: 5.44,
-    total: 69.44,
-    depositPaid: 69.44,
-    paymentMethod: "Credit Card (•••• 4242)",
-    ratingGiven: 5,
-    feedback: "Incredible skyline view and prompt service. The eggless truffle cake was divine!",
-  },
-  {
-    id: "RES-54321",
-    type: "reservation",
-    date: "25 Aug 2026, 07:30 PM – 08:30 PM",
-    bookingDate: "25 Aug 2026",
-    status: "Completed",
-    statusColor: "emerald",
-    zone: "Private VIP Suite",
-    zoneImage: "/img/dining/private-vip.jpg",
-    guests: 6,
-    slots: ["07:30 PM - 08:30 PM"],
-    occasion: "Family Reunion",
-    dietary: "No Onion No Garlic",
-    addOns: ["Royal Saffron Shahi Thandai Welcome"],
-    tableNumber: "VIP Teak Room 1",
-    guestName: "Ishaan Sharma",
-    guestPhone: "+1 (555) 234-5678",
-    guestEmail: "ishaan.sharma@example.com",
-    specialNotes: "Elderly guests attending, quiet corner preferred.",
-    coverPricePerGuest: 20.0,
-    addOnTotal: 36.0,
-    taxes: 13.26,
-    total: 169.26,
-    depositPaid: 169.26,
-    paymentMethod: "Apple Pay",
-    ratingGiven: 5,
-    feedback: "Dedicated butler service was exemplary. Everyone loved the authentic satvik dishes!",
-  },
-];
-
-// Initial sample cart items so Cart and Checkout pages have rich data out-of-the-box
-const initialSampleCart = {
-  "tc-1": 1, // Royal Maharaja Grand Thali
-  "ni-1": 2, // Paneer Tikka Charcoal Skewers
-  "ni-8": 3, // Butter Garlic Naan
-  "bv-1": 2, // Royal Amritsari Malai Lassi
-  "ds-1": 1, // Warm Shahi Gulab Jamun
-};
-
-const initialSampleNotes = {
-  "ni-1": "Medium spicy, extra mint chutney please",
-  "tc-1": "Extra butter on the rotis",
-};
+// No demo addresses or order history are shown while the backend is unavailable.
+const initialAddresses = [];
+const initialOrders = [];
+const initialReservations = [];
+const initialSampleCart = {};
+const initialSampleNotes = {};
 
 // Available coupon codes
 export const availableCoupons = [
@@ -285,7 +60,7 @@ export const availableCoupons = [
     discountAmount: 8,
     minOrder: 50,
     description: "Flat $8 OFF on Grand Maharaja Royal Thalis & Combos",
-    terms: "Min order value $50. Cannot be clubbed with SuperCoins.",
+    terms: "Min order value ₹50. Cannot be clubbed with CreditCoins.",
     tag: "ROYAL THALI",
     badgeColor: "from-amber-500 to-rose-600",
   },
@@ -305,7 +80,7 @@ export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState(initialSampleCart);
   // Item notes / instructions: { [dishId]: "extra spicy, etc" }
   const [itemNotes, setItemNotes] = useState(initialSampleNotes);
-  
+
   // Order Fulfillment Mode: "delivery" | "takeaway" | "dinein"
   const [orderMode, setOrderMode] = useState("delivery");
   const [tableNumber, setTableNumber] = useState("Table 07");
@@ -316,10 +91,16 @@ export function CartProvider({ children }) {
   const [deliveryTip, setDeliveryTip] = useState(3); // default $3 tip
   const [optOutCutlery, setOptOutCutlery] = useState(true);
   const [deliveryInstruction, setDeliveryInstruction] = useState("leave-at-door");
-  const [useSuperCoins, setUseSuperCoins] = useState(false);
-  const [superCoinsBalance, setSuperCoinsBalance] = useState(250); // 250 coins = $2.50
-  
-  // Addresses & Orders State
+  const [useCreditCoins, setUseCreditCoins] = useState(false);
+  // Balance starts at 10 (the DB default for new users) and syncs with the
+  // authenticated user's cridetCoin field once AuthContext resolves.
+  const [creditCoinsBalance, setCreditCoinsBalance] = useState(0);
+
+  // Membership state
+  const [membership, setMembership] = useState(null);
+  const isMember = Boolean(
+    membership && (!membership.endDate || new Date(membership.endDate) > new Date()) && membership.status === "active"
+  );
   const [savedAddresses, setSavedAddresses] = useState(initialAddresses);
   const [selectedAddressId, setSelectedAddressId] = useState("addr-1");
   const [ordersHistory, setOrdersHistory] = useState(initialOrders);
@@ -340,6 +121,61 @@ export function CartProvider({ children }) {
     dietaryPreference: "Pure Vegetarian",
     spiceTolerance: "Medium 🌶️🌶️",
   });
+
+  // Sync CreditCoins balance from the authenticated user (cridetCoin field).
+  // This runs once on mount and again whenever the auth state changes
+  // (e.g. after login / logout / coin deduction).
+  const { user: authUser } = useAuth() || {};
+  useEffect(() => {
+    if (authUser) {
+      // DB field is "cridetCoin" (kept as-is to avoid migration).
+      // Use Number() – not typeof check – because Mongoose sometimes returns
+      // numeric fields as strings depending on the query path.
+      const raw = authUser.cridetCoin ?? authUser.creditCoins ?? authUser.creditCoin;
+      const coins = raw !== undefined && raw !== null ? Number(raw) : NaN;
+      if (Number.isFinite(coins) && coins >= 0) {
+        setCreditCoinsBalance(coins);
+      } else if (authUser._id) {
+        // cridetCoin missing from this auth object – fetch fresh from /auth/me
+        api.get("/auth/me")
+          .then((res) => {
+            const u = res.data?.data;
+            if (u) {
+              const freshRaw = u.cridetCoin ?? u.creditCoins ?? u.creditCoin;
+              const freshCoins = freshRaw !== undefined ? Number(freshRaw) : NaN;
+              if (Number.isFinite(freshCoins) && freshCoins >= 0) {
+                setCreditCoinsBalance(freshCoins);
+              }
+            }
+          })
+          .catch(() => { }); // Silent – don't crash on network errors
+      }
+      // Also pre-fill user profile from the real auth user if available.
+      setUserProfile((prev) => ({
+        ...prev,
+        name: authUser.name || prev.name,
+        email: authUser.email || prev.email,
+        mobile: authUser.phoneNo ? String(authUser.phoneNo) : prev.mobile,
+        phone: authUser.phoneNo ? String(authUser.phoneNo) : prev.phone,
+        avatar: authUser.pic || prev.avatar,
+      }));
+      // Fetch active membership for user
+      if (authUser?.activeMembership) {
+        setMembership(authUser.activeMembership);
+      } else if (authUser?._id || authUser?.id) {
+        api.get(`/api/membership/current/${encodeURIComponent(authUser._id || authUser.id)}`)
+          .then((res) => {
+            if (res.data?.data) setMembership(res.data.data);
+          })
+          .catch(() => { });
+      }
+    } else {
+      // Logged out — reset to 0 (not 10; 10 was the new-user DB default,
+      // but showing it when logged out is misleading).
+      setCreditCoinsBalance(0);
+      setMembership(null);
+    }
+  }, [authUser]);
 
   // Load from localStorage on client mount
   useEffect(() => {
@@ -391,39 +227,274 @@ export function CartProvider({ children }) {
   // Save to localStorage when state changes
   useEffect(() => {
     try {
+      const stored = localStorage.getItem("tastora_order_mode");
+      if (stored) setOrderMode(stored);
+    } catch (e) { }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (orderMode) localStorage.setItem("tastora_order_mode", orderMode);
+    } catch (e) { }
+  }, [orderMode]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem("tastora_cart_items", JSON.stringify(cartItems));
-    } catch (e) {}
+    } catch (e) { }
   }, [cartItems]);
 
   useEffect(() => {
     try {
       localStorage.setItem("tastora_user_profile", JSON.stringify(userProfile));
-    } catch (e) {}
+    } catch (e) { }
   }, [userProfile]);
 
   useEffect(() => {
     try {
       localStorage.setItem("tastora_favorites", JSON.stringify(favorites));
-    } catch (e) {}
+    } catch (e) { }
   }, [favorites]);
 
   useEffect(() => {
     try {
       localStorage.setItem("tastora_addresses", JSON.stringify(savedAddresses));
-    } catch (e) {}
+    } catch (e) { }
   }, [savedAddresses]);
 
   useEffect(() => {
     try {
       localStorage.setItem("tastora_orders", JSON.stringify(ordersHistory));
-    } catch (e) {}
+    } catch (e) { }
   }, [ordersHistory]);
 
   useEffect(() => {
     try {
       localStorage.setItem("tastora_reservations", JSON.stringify(reservationsHistory));
-    } catch (e) {}
+    } catch (e) { }
   }, [reservationsHistory]);
+
+  // Sync backend orders and reservations when a user is logged in
+  const activeUserId = authUser?._id || (typeof window !== "undefined" ? localStorage.getItem("userid") : null);
+
+  useEffect(() => {
+    if (!activeUserId) return;
+    let isSubscribed = true;
+
+    async function syncBackendData() {
+      try {
+        const checkoutRes = await api.get(`/checkout/user/${encodeURIComponent(activeUserId)}`);
+        const serverCheckouts = checkoutRes.data?.data;
+        if (isSubscribed && Array.isArray(serverCheckouts)) {
+          const mappedOrders = serverCheckouts.map((ch) => ({
+            id: `ORD-${ch._id.slice(-6).toUpperCase()}`,
+            dbId: ch._id,
+            date: ch.createdAt
+              ? new Date(ch.createdAt).toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+              : "Recent",
+            orderMode: ch.orderMode || "delivery",
+            tableNumber: ch.tableNumber || null,
+            pickupTime: ch.pickupTime || null,
+            status: ch.orderStatus || "Confirmed",
+            statusColor: ch.orderStatus === "Delivered" ? "emerald" : "orange",
+            currentStep: ch.orderStatus === "Delivered" ? 4 : 2,
+            eta: ch.orderMode === "takeaway" ? "15-20 mins" : "25-30 mins",
+            items: (ch.products || []).map((p) => {
+              const productObj = p.product || {};
+              const findDisplayName = (value, seen = new Set()) => {
+                if (!value || typeof value === "number") return null;
+                if (typeof value === "string") {
+                  const cleaned = value.trim();
+                  if (!cleaned || /^[a-f0-9]{24}$/i.test(cleaned) || /^ord-/i.test(cleaned) || /^res-/i.test(cleaned)) {
+                    return null;
+                  }
+                  if (["full", "half", "regular", "standard", "default"].includes(cleaned.toLowerCase())) {
+                    return null;
+                  }
+                  return cleaned;
+                }
+                if (Array.isArray(value)) {
+                  for (const entry of value) {
+                    const found = findDisplayName(entry, seen);
+                    if (found) return found;
+                  }
+                  return null;
+                }
+                if (typeof value !== "object") return null;
+                if (seen.has(value)) return null;
+                seen.add(value);
+
+                const priority = ["title", "name", "customName", "productName", "productTitle", "label", "displayName", "dishName", "variantName", "product"];
+                for (const key of priority) {
+                  const found = findDisplayName(value[key], seen);
+                  if (found) return found;
+                }
+
+                for (const [key, nested] of Object.entries(value)) {
+                  if (["variant", "variantName", "variants", "full", "half", "name"].includes(key) && typeof nested === "string" && ["full", "half", "regular", "standard", "default"].includes(nested.trim().toLowerCase())) {
+                    continue;
+                  }
+                  const found = findDisplayName(nested, seen);
+                  if (found) return found;
+                }
+                return null;
+              };
+
+              const savedProductName = [p.productName, productObj.name, p.name].find(
+                (name) =>
+                  typeof name === "string" &&
+                  name.trim() &&
+                  !["full", "half", "regular", "standard", "default"].includes(name.trim().toLowerCase())
+              );
+              const titleStr =
+                savedProductName ||
+                findDisplayName({ ...p, product: productObj }) ||
+                "Item name unavailable";
+
+              const rawPic = productObj.pic || p.image || p.pic;
+              const picStr = Array.isArray(rawPic) ? rawPic[0] : rawPic;
+              const imageUri =
+                typeof picStr === "string" && picStr.length > 0
+                  ? picStr.startsWith("http")
+                    ? picStr
+                    : `${process.env.NEXT_PUBLIC_BACKEND_SERVER || "http://localhost:8000"}/${picStr.replace(/^\/+/, "")}`
+                  : "/img/category/paneer-tikka.jpg";
+
+              return {
+                id: productObj._id || p._id || Math.random().toString(36).slice(2),
+                title: String(titleStr),
+                price: p.total
+                  ? Number(p.total) / (Number(p.qty) || 1)
+                  : Number(productObj.finalPrice || productObj.basePrice || 12.99),
+                quantity: Number(p.qty || p.quantity) || 1,
+                image: imageUri,
+                note: typeof p.note === "string" ? p.note : null,
+              };
+            }),
+            itemTotal: ch.subtotal || 0,
+            discount: (ch.discount || 0) + (ch.coinsDiscount || 0),
+            couponApplied: ch.coupon || null,
+            coinsDiscount: ch.coinsDiscount || 0,
+            coinsUsed: ch.coinsUsed || 0,
+            creditCoinsEarned: ch.creditCoinsEarned || Math.floor((Number(ch.subtotal) || 0) * 0.10),
+            deliveryFee: ch.deliveryCharge || 0,
+            taxes: ch.tax || 0,
+            total: ch.total || 0,
+            deliveryAddress:
+              typeof ch.address === "object" && ch.address?.addressLine
+                ? `${ch.address.addressLine}, ${ch.address.city || ""}`
+                : ch.address || "Delivery Address",
+            deliveryCoordinates:
+              ch.address && Number.isFinite(Number(ch.address.lat)) && Number.isFinite(Number(ch.address.lng))
+                ? { lat: Number(ch.address.lat), lng: Number(ch.address.lng) }
+                : null,
+            paymentMethod: ch.paymentMode || "COD",
+            ratingGiven: Number(ch.customerRating || ch.ratingGiven) || null,
+            feedback: ch.customerComment || ch.feedback || null,
+            commentRewarded: Boolean(ch.commentRewarded),
+            deliveryRating: Number(ch.deliveryRating) || null,
+            deliveryFeedback: ch.deliveryFeedback || "",
+            deliveryRatingRewarded: Boolean(ch.deliveryRatingRewarded),
+            deliveryBoyAssigned: Boolean(ch.deliveryBoy?._id || ch.deliveryBoy),
+            deliveryBoyName: ch.deliveryBoy?.name || "",
+          }));
+
+          setOrdersHistory((prev) => {
+            const serverIds = new Set(mappedOrders.map((o) => o.dbId));
+            const localOnly = prev.filter((o) => !o.dbId || !serverIds.has(o.dbId));
+            return [...mappedOrders, ...localOnly];
+          });
+        }
+      } catch (err) {
+        // quiet fallback
+      }
+
+      try {
+        const bookingRes = await api.get(`/booking/user/${encodeURIComponent(activeUserId)}`);
+        const serverBookings = bookingRes.data?.data;
+        if (isSubscribed && Array.isArray(serverBookings)) {
+          const mappedBookings = serverBookings.map((b) => ({
+            id: `RES-${b._id.slice(-6).toUpperCase()}`,
+            dbId: b._id,
+            type: "reservation",
+            date: `${b.date || "Upcoming"}${b.time ? ` • ${b.time}` : ""}`,
+            bookingDate: b.date || "Upcoming",
+            status: b.bookingState === "cancelled" || b.bookingStatus === false || String(b.bookingStatus).toLowerCase() === "false"
+              ? "Cancelled"
+              : b.bookingStatus ? "Confirmed" : "Pending",
+            statusColor: b.bookingState === "cancelled" || b.bookingStatus === false || String(b.bookingStatus).toLowerCase() === "false"
+              ? "zinc"
+              : b.bookingStatus ? "emerald" : "amber",
+            zone: b.zone || b.resturent?.name || b.restaurantName || "Dining Room",
+            zoneImage: b.zoneImage || b.resturent?.pic || "/img/dining/royal-courtyard.jpg",
+            guests: b.seats || 2,
+            slots: b.time ? b.time.split(", ") : [],
+            occasion: b.occasion || "",
+            dietary: b.dietary || "",
+            addOns: Array.isArray(b.addOns) ? b.addOns : [],
+            tableNumber: b.tableNumber || "",
+            guestName: b.guestName || b.user?.name || "",
+            guestPhone: b.guestPhone || b.user?.phone || "",
+            guestEmail: b.guestEmail || b.user?.email || "",
+            specialNotes: b.specialNotes || "",
+            coverPricePerGuest: Number(b.coverPricePerGuest) || 0,
+            addOnTotal: Number(b.addOnTotal) || 0,
+            taxes: Number(b.tax) || 0,
+            total: b.total || 0,
+            depositPaid: b.paymentStatus === "Done" ? b.total || 0 : 0,
+            paymentMethod: b.paymentMode || "COD",
+            ratingGiven: b.ratingGiven || null,
+            feedback: b.feedback || null,
+          }));
+
+          setReservationsHistory((prev) => {
+            const serverIds = new Set(mappedBookings.map((r) => r.dbId));
+            const localOnly = prev.filter((r) => !r.dbId);
+            return [...mappedBookings, ...localOnly];
+          });
+        }
+      } catch (err) {
+        // quiet fallback
+      }
+      try {
+        const addrRes = await api.get(`/api/address/user/${encodeURIComponent(activeUserId)}`);
+        const serverAddrs = addrRes.data?.data;
+        if (isSubscribed && Array.isArray(serverAddrs) && serverAddrs.length > 0) {
+          const mapped = serverAddrs.map((a) => ({
+            id: a._id,
+            _id: a._id,
+            tag: a.label || "Home",
+            isDefault: Boolean(a.isDefault),
+            recipientName: a.recipientName || authUser?.name || "Customer",
+            phone: a.phone || (authUser?.phoneNo ? String(authUser.phoneNo) : ""),
+            addressLine: a.address || "",
+            landmark: a.landmark || "",
+            city: a.city || "",
+            state: a.state || "",
+            zipCode: a.pin || "",
+            lat: a.lat,
+            lng: a.lng,
+            type: (a.label || "home").toLowerCase(),
+          }));
+          setSavedAddresses(mapped);
+          const def = mapped.find((a) => a.isDefault);
+          if (def) setSelectedAddressId(def.id);
+        }
+      } catch (err) {
+        // quiet fallback
+      }
+    }
+
+    syncBackendData();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [activeUserId]);
 
   // Cart helper functions
   const loadSampleCart = () => {
@@ -485,27 +556,106 @@ export function CartProvider({ children }) {
     setCartItems(newItems);
   };
 
-  // Address management
-  const addAddress = (newAddr) => {
-    const created = {
+  // Address management with full backend persistence
+  const addAddress = async (newAddr) => {
+    let created = {
       ...newAddr,
       id: `addr-${Date.now()}`,
     };
-    setSavedAddresses((prev) => [...prev, created]);
-    setSelectedAddressId(created.id);
+    if (activeUserId) {
+      try {
+        const res = await api.post("/api/address", {
+          user: activeUserId,
+          label: newAddr.tag || newAddr.type || "Home",
+          address: newAddr.addressLine || newAddr.address,
+          city: newAddr.city,
+          state: newAddr.state,
+          pin: newAddr.zipCode || newAddr.pin,
+          lat: newAddr.lat,
+          lng: newAddr.lng,
+          isDefault: Boolean(newAddr.isDefault),
+        });
+        if (res.data?.data?._id) {
+          created = {
+            ...created,
+            id: res.data.data._id,
+            _id: res.data.data._id,
+          };
+        }
+      } catch (e) {
+        console.warn("Failed to persist address to server:", e);
+      }
+    }
+    setSavedAddresses((prev) => {
+      const updated = newAddr.isDefault ? prev.map((a) => ({ ...a, isDefault: false })) : [...prev];
+      return [...updated, created];
+    });
+    if (newAddr.isDefault || !selectedAddressId) {
+      setSelectedAddressId(created.id);
+    }
+    return created;
   };
 
-  const updateAddress = (id, updated) => {
+  const updateAddress = async (id, updated) => {
+    if (activeUserId && id && !String(id).startsWith("addr-")) {
+      try {
+        await api.put(`/api/address/${id}`, {
+          label: updated.tag || updated.label,
+          address: updated.addressLine || updated.address,
+          city: updated.city,
+          state: updated.state,
+          pin: updated.zipCode || updated.pin,
+          lat: updated.lat,
+          lng: updated.lng,
+          isDefault: Boolean(updated.isDefault),
+        });
+      } catch (e) {
+        console.warn("Failed to update address on server:", e);
+      }
+    }
     setSavedAddresses((prev) =>
-      prev.map((addr) => (addr.id === id ? { ...addr, ...updated } : addr))
+      prev.map((addr) => {
+        if (addr.id === id || addr._id === id) {
+          return { ...addr, ...updated };
+        }
+        if (updated.isDefault) {
+          return { ...addr, isDefault: false };
+        }
+        return addr;
+      })
     );
   };
 
-  const deleteAddress = (id) => {
-    setSavedAddresses((prev) => prev.filter((addr) => addr.id !== id));
-    if (selectedAddressId === id) {
-      setSelectedAddressId(savedAddresses[0]?.id || null);
+  const deleteAddress = async (id) => {
+    if (activeUserId && id && !String(id).startsWith("addr-")) {
+      try {
+        await api.delete(`/api/address/${id}`);
+      } catch (e) {
+        console.warn("Failed to delete address on server:", e);
+      }
     }
+    setSavedAddresses((prev) => prev.filter((addr) => addr.id !== id && addr._id !== id));
+    if (selectedAddressId === id) {
+      setSelectedAddressId(savedAddresses.find((a) => a.id !== id)?.id || null);
+    }
+  };
+
+  const setDefaultAddress = async (id) => {
+    if (activeUserId && id && !String(id).startsWith("addr-")) {
+      try {
+        await api.put(`/api/address/${id}`, { isDefault: true });
+        await api.put(`/api/user/${activeUserId}`, { defaultAddress: id });
+      } catch (e) {
+        console.warn("Failed to set default address on server:", e);
+      }
+    }
+    setSavedAddresses((prev) =>
+      prev.map((addr) => ({
+        ...addr,
+        isDefault: addr.id === id || addr._id === id,
+      }))
+    );
+    setSelectedAddressId(id);
   };
 
   // Place Order Simulation
@@ -538,6 +688,9 @@ export function CartProvider({ children }) {
       itemTotal: subtotal,
       discount: discountAmount,
       couponApplied: appliedCoupon?.code || null,
+      coinsDiscount: useCreditCoins ? (orderDetails.coinsDiscount || creditCoinsDiscount || 0) : 0,
+      coinsUsed: useCreditCoins ? (orderDetails.coinsUsed || 0) : 0,
+      creditCoinsEarned: Math.floor(subtotal * 0.10),
       deliveryFee,
       taxes: taxAmount,
       tip: orderMode === "delivery" ? deliveryTip : 0,
@@ -546,8 +699,8 @@ export function CartProvider({ children }) {
         orderMode === "dinein"
           ? `Dine-In ${tableNumber || "Table 07"}`
           : orderMode === "takeaway"
-          ? "Pickup Counter #2 (42 Flavor Street, NY)"
-          : savedAddresses.find((a) => a.id === selectedAddressId)?.addressLine ||
+            ? "Pickup Counter #2 (42 Flavor Street, NY)"
+            : savedAddresses.find((a) => a.id === selectedAddressId)?.addressLine ||
             "42 Flavor Street, Manhattan, NY",
       deliveryInstruction: orderMode === "delivery" ? deliveryInstruction : null,
       paymentMethod: orderDetails.paymentMethod || "UPI",
@@ -575,34 +728,35 @@ export function CartProvider({ children }) {
 
   // Reservation Management Methods
   const bookReservation = (bookingData) => {
-    const generatedId = `RES-${Math.floor(10000 + Math.random() * 90000)}`;
+    const generatedId = `RES-${Date.now().toString().slice(-6).toUpperCase()}`;
     const newReservation = {
-      id: generatedId,
+      id: bookingData.id || generatedId,
+      dbId: bookingData.dbId || null,
       type: "reservation",
-      date: bookingData.dateDisplay || "Upcoming Date",
-      bookingDate: "Today",
-      status: "Confirmed",
-      statusColor: "emerald",
-      zone: bookingData.zoneName || "The Royal Courtyard",
-      zoneImage: bookingData.zoneImage || "/img/dining/royal-courtyard.jpg",
-      guests: bookingData.guests || 2,
-      slots: bookingData.slots || ["07:00 PM - 08:00 PM"],
-      occasion: bookingData.occasion || "Casual Dining",
-      dietary: bookingData.dietary || "Standard Pure Veg",
+      date: bookingData.dateDisplay || "",
+      bookingDate: bookingData.bookingDate || "",
+      status: bookingData.status || "Confirmed",
+      statusColor: bookingData.statusColor || "emerald",
+      zone: bookingData.zoneName || "",
+      zoneImage: bookingData.zoneImage || "",
+      guests: bookingData.guests ?? 0,
+      slots: bookingData.slots || [],
+      occasion: bookingData.occasion || "",
+      dietary: bookingData.dietary || "",
       addOns: bookingData.addOns || [],
-      tableNumber: bookingData.tableNumber || `Table #${Math.floor(1 + Math.random() * 20)}`,
+      tableNumber: bookingData.tableNumber || "",
       guestName: bookingData.guestName || userProfile.name,
       guestPhone: bookingData.guestPhone || userProfile.phone,
       guestEmail: bookingData.guestEmail || userProfile.email,
       specialNotes: bookingData.specialNotes || "",
-      coverPricePerGuest: bookingData.coverPricePerGuest || 20.0,
-      addOnTotal: bookingData.addOnTotal || 0,
-      taxes: bookingData.taxes || 0,
-      total: bookingData.total || 40.0,
-      depositPaid: bookingData.depositPaid || bookingData.total || 40.0,
+      coverPricePerGuest: bookingData.coverPricePerGuest ?? 0,
+      addOnTotal: bookingData.addOnTotal ?? 0,
+      taxes: bookingData.taxes ?? 0,
+      total: bookingData.total ?? 0,
+      depositPaid: bookingData.depositPaid ?? 0,
       paymentMethod: bookingData.paymentMethod || "COD (Pay at Counter)",
-      ratingGiven: null,
-      feedback: null,
+      ratingGiven: bookingData.ratingGiven || null,
+      feedback: bookingData.feedback || null,
     };
 
     setReservationsHistory((prev) => [newReservation, ...prev]);
@@ -637,11 +791,12 @@ export function CartProvider({ children }) {
     return sum + (dish ? dish.price * qty : 0);
   }, 0);
 
-  // Free delivery threshold: $35.00
+  // Free delivery threshold: $35.00, or FREE for VIP members
   const freeDeliveryThreshold = 35.0;
-  const isFreeDelivery = orderMode !== "delivery" || subtotal >= freeDeliveryThreshold;
+  const memberFreeDelivery = Boolean(isMember && membership?.freeDelivery);
+  const isFreeDelivery = orderMode !== "delivery" || subtotal >= freeDeliveryThreshold || memberFreeDelivery;
   const deliveryFee = orderMode !== "delivery" ? 0 : subtotal === 0 ? 0 : isFreeDelivery ? 0 : 2.99;
-  const freeDeliveryShortfall = orderMode === "delivery" ? Math.max(0, freeDeliveryThreshold - subtotal) : 0;
+  const freeDeliveryShortfall = orderMode === "delivery" && !memberFreeDelivery ? Math.max(0, freeDeliveryThreshold - subtotal) : 0;
 
   // Coupon discount computation
   let discountAmount = 0;
@@ -656,8 +811,8 @@ export function CartProvider({ children }) {
     }
   }
 
-  // SuperCoins discount ($2.50 discount for 250 coins)
-  const superCoinsDiscount = useSuperCoins ? 2.5 : 0;
+  // CreditCoins discount (50 coins = ₹1)
+  const creditCoinsDiscount = useCreditCoins ? Number((creditCoinsBalance / 50).toFixed(2)) : 0;
 
   // Taxes: 8.5%
   const taxAmount = subtotal > 0 ? Number(((subtotal - discountAmount) * 0.085).toFixed(2)) : 0;
@@ -666,7 +821,7 @@ export function CartProvider({ children }) {
   const activeTip = orderMode === "delivery" ? (subtotal > 0 ? deliveryTip : 0) : 0;
   const grandTotal = Math.max(
     0,
-    subtotal - discountAmount - superCoinsDiscount + deliveryFee + taxAmount + activeTip
+    subtotal - discountAmount - creditCoinsDiscount + deliveryFee + taxAmount + activeTip
   );
 
   return (
@@ -704,10 +859,12 @@ export function CartProvider({ children }) {
         setOptOutCutlery,
         deliveryInstruction,
         setDeliveryInstruction,
-        useSuperCoins,
-        setUseSuperCoins,
-        superCoinsBalance,
-        superCoinsDiscount,
+        useCreditCoins,
+        setUseCreditCoins,
+        creditCoinsBalance,
+        setCreditCoinsBalance,
+        creditCoinsDiscount,
+        // (no superCoins aliases – all consumers use creditCoins names directly)
         taxAmount,
         grandTotal,
         savedAddresses,
@@ -716,6 +873,7 @@ export function CartProvider({ children }) {
         addAddress,
         updateAddress,
         deleteAddress,
+        setDefaultAddress,
         ordersHistory,
         reorderPastOrder,
         placeOrder,
@@ -726,6 +884,10 @@ export function CartProvider({ children }) {
         rateReservation,
         userProfile,
         setUserProfile,
+        membership,
+        setMembership,
+        isMember,
+        memberFreeDelivery,
       }}
     >
       {children}

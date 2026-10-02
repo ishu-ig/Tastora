@@ -1,33 +1,26 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
   Calendar,
   Clock,
+  Search,
   Users,
   Sparkles,
-  MapPin,
   ChevronRight,
   ChevronLeft,
   CheckCircle2,
   Check,
   Flame,
   Phone,
-  Mail,
-  User,
-  Heart,
   ShieldCheck,
   Crown,
-  Coffee,
-  Gift,
-  HelpCircle,
   Star,
   Download,
   Share2,
   ArrowRight,
-  Info,
   Car,
   Music,
   UtensilsCrossed,
@@ -39,13 +32,17 @@ import {
   Send,
   AlertCircle,
   MessageSquare,
-  Tag,
-  ThumbsUp,
   Camera,
   PenLine,
+  Receipt,
+  Printer,
+  LogIn,
 } from "lucide-react";
 import HistoryCard from "../../Component/HistoryCard";
 import { useCart } from "../../context/CartContext";
+import { useAuth } from "../../context/AuthContext";
+import api from "../../lib/axiosInstance";
+import { openRazorpayModal } from "../../lib/razorpay";
 
 // Swiper Carousel Imports
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -233,15 +230,6 @@ function getUpcomingDatesList(totalDays = 30) {
   return dates;
 }
 
-// Helper: Convert "HH:MM" start time to minutes
-function slotStartToMinutes(slot) {
-  const match = slot.match(/^(\d{1,2}):(\d{2})/);
-  if (!match) return null;
-  const hh = parseInt(match[1], 10);
-  const mm = parseInt(match[2], 10);
-  return hh * 60 + mm;
-}
-
 // Helper: Generate 1-hour slots from openTime to closeTime
 function generateTimeSlots(openTime, closeTime) {
   if (!openTime || !closeTime) return [];
@@ -252,8 +240,6 @@ function generateTimeSlots(openTime, closeTime) {
   while (start < end) {
     const next = new Date(start);
     next.setMinutes(start.getMinutes() + 60);
-    const startStr = `${fmt(start.getHours())}:${fmt(start.getMinutes())}`;
-    const nextStr = `${fmt(next.getHours())}:${fmt(next.getMinutes())}`;
 
     // Format to 12-hour AM/PM
     const format12 = (h, m) => {
@@ -296,6 +282,7 @@ export default function ReservePage() {
     rateReservation,
     userProfile,
   } = useCart();
+  const { user: authUser } = useAuth() || {};
 
   // Navigation tab: "book" or "history"
   const [activeTab, setActiveTab] = useState("book");
@@ -305,16 +292,23 @@ export default function ReservePage() {
   const [resRatingVal, setResRatingVal] = useState(5);
   const [resFeedbackText, setResFeedbackText] = useState("");
   const [resRatingSuccess, setResRatingSuccess] = useState(false);
+  const [resRatingError, setResRatingError] = useState("");
 
   // Main Configuration State
   const [selectedZone, setSelectedZone] = useState(diningZones[0]);
   const [reservationDate, setReservationDate] = useState(() => getTodayStr());
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [qtySeats, setQtySeats] = useState(2);
-  const [paymentMode, setPaymentMode] = useState("COD"); // "COD" | "Net Banking"
+  const [paymentMode, setPaymentMode] = useState("COD"); // "COD" | "Razorpay"
   const [selectedAddOns, setSelectedAddOns] = useState([]);
   const [selectedDiet, setSelectedDiet] = useState("Standard Pure Veg");
   const [occasion, setOccasion] = useState("Casual Dining");
+
+  // Seats left (starts from the restaurant's capacity, drops after each booking)
+  const [seatsLeft, setSeatsLeft] = useState(restaurantData.seatAvailable);
+
+  // Login prompt modal
+  const [loginModal, setLoginModal] = useState({ visible: false, message: "" });
 
   // Primary Guest Details
   const [guestName, setGuestName] = useState("");
@@ -329,6 +323,7 @@ export default function ReservePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [bookingId, setBookingId] = useState("");
+  const [reservationActionError, setReservationActionError] = useState("");
 
   // Swiper Slider State
   const [swiperInstance, setSwiperInstance] = useState(null);
@@ -380,6 +375,14 @@ export default function ReservePage() {
   // Upcoming Dates list (30 days) for non-calendar visual selector
   const upcomingDates = useMemo(() => getUpcomingDatesList(30), []);
 
+  // Meal Period Filter State
+  const [selectedMealPeriod, setSelectedMealPeriod] = useState("all"); // "all" | "lunch" | "evening" | "dinner"
+
+  // Generate All Time Slots for the restaurant's operational hours
+  const allGeneratedSlots = useMemo(() => {
+    return generateTimeSlots(restaurantData.openTime, restaurantData.closeTime);
+  }, []);
+
   const handleDateSelect = (dateIso) => {
     setReservationDate(dateIso);
     setErrorMsg((prev) => ({ ...prev, date: "" }));
@@ -407,14 +410,6 @@ export default function ReservePage() {
     const weekendDate = upcomingDates.find((d) => d.isWeekend && !d.isToday);
     return weekendDate ? weekendDate.iso : null;
   }, [upcomingDates]);
-
-  // Meal Period Filter State
-  const [selectedMealPeriod, setSelectedMealPeriod] = useState("all"); // "all" | "lunch" | "evening" | "dinner"
-
-  // Generate All Time Slots for the restaurant's operational hours
-  const allGeneratedSlots = useMemo(() => {
-    return generateTimeSlots(restaurantData.openTime, restaurantData.closeTime);
-  }, []);
 
   // Filter slots available for the selected date
   const availableSlotsForDate = useMemo(() => {
@@ -470,11 +465,38 @@ export default function ReservePage() {
 
   const baseSeatsCost = restaurantData.finalPrice * qtySeats;
   const grandTotal = baseSeatsCost + totalAddOnCost;
+  const taxAmount = Number((grandTotal * 0.085).toFixed(2));
+  const totalPayable = Number((grandTotal + taxAmount).toFixed(2));
 
   const avgRating = useMemo(() => {
     if (!comments.length) return "5.0";
     return (comments.reduce((sum, c) => sum + c.rating, 0) / comments.length).toFixed(1);
   }, [comments]);
+
+  // Logged-in user id (auth context first, then localStorage)
+  const getStoredUserId = () => {
+    if (authUser?._id || authUser?.id) return authUser._id || authUser.id;
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("userid") || localStorage.getItem("userId");
+  };
+
+  // Lowers the seat count after a booking. If NEXT_PUBLIC_RESTAURANT_ID is set
+  // and syncServer is true, the new count is also saved on the server.
+  const reduceSeats = async (count, syncServer) => {
+    const next = Math.max(0, seatsLeft - count);
+    setSeatsLeft(next);
+    const restaurantId = process.env.NEXT_PUBLIC_RESTAURANT_ID;
+    if (!syncServer || !restaurantId) return;
+    try {
+      const res = await api.put(`/resturent/user/${restaurantId}`, { seatAvailable: next });
+      if (res.data?.result !== "Done") {
+        console.error("Seat update failed after booking was created:", res.data);
+      }
+    } catch (seatErr) {
+      // The booking already exists, so don't block the user. Worth reconciling server-side.
+      console.error("Seat update failed after booking was created:", seatErr);
+    }
+  };
 
   // Share functionality
   const handleShare = async () => {
@@ -500,12 +522,20 @@ export default function ReservePage() {
   };
 
   // Submit Reservation
-  const handleReservationSubmit = (e) => {
+  const handleReservationSubmit = async (e) => {
     e.preventDefault();
     setShowErrors(true);
 
+    // Restaurant must be open to accept any booking at all.
     if (!restaurantData.status) {
       alert("This restaurant is currently closed and not accepting new bookings.");
+      return;
+    }
+
+    // Check login first, so the person isn't asked to fill the form for nothing.
+    const userId = getStoredUserId();
+    if (!userId) {
+      setLoginModal({ visible: true, message: "Log in to reserve a table." });
       return;
     }
 
@@ -527,34 +557,176 @@ export default function ReservePage() {
       return;
     }
 
+    // A slot can be valid when picked and pass while the form sits open.
+    const validSlotsNow = filterSlotsForDate(allGeneratedSlots, reservationDate);
+    const stillValidSlots = selectedSlots.filter((s) => validSlotsNow.includes(s));
+    if (stillValidSlots.length === 0) {
+      setErrorMsg((prev) => ({
+        ...prev,
+        slot: "Your selected time slot(s) have already passed. Please choose another.",
+      }));
+      setSelectedSlots([]);
+      return;
+    }
+
+    if (seatsLeft <= 0) {
+      setErrorMsg((prev) => ({ ...prev, general: "No seats are available right now." }));
+      return;
+    }
+    if (qtySeats > seatsLeft) {
+      setErrorMsg((prev) => ({
+        ...prev,
+        general: `Only ${seatsLeft} seat${seatsLeft > 1 ? "s" : ""} left. Please reduce the number of guests.`,
+      }));
+      setQtySeats(seatsLeft);
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to make a booking?")) {
+      return;
+    }
+
     setIsSubmitting(true);
-    setTimeout(() => {
+    setErrorMsg((prev) => ({ ...prev, general: "" }));
+    const tax = taxAmount;
+    const total = totalPayable;
+    const addOnNames = selectedAddOns.map((id) => addOnsList.find((item) => item.id === id)?.name).filter(Boolean);
+    const bookingPayload = {
+      user: userId,
+      paymentMode: paymentMode === "COD" ? "COD" : "Razorpay",
+      date: reservationDate,
+      time: stillValidSlots.join(", "),
+      seats: qtySeats,
+      total,
+      restaurantName: restaurantData.name,
+      zone: selectedZone.name,
+      zoneImage: selectedZone.image,
+      occasion,
+      dietary: selectedDiet,
+      addOns: addOnNames,
+      guestName: guestName.trim() || userProfile?.name || "",
+      guestPhone: guestPhone.trim() || userProfile?.phone || "",
+      guestEmail: guestEmail.trim() || userProfile?.email || "",
+      specialNotes: specialNotes.trim(),
+      coverPricePerGuest: restaurantData.finalPrice,
+      addOnTotal: totalAddOnCost,
+      tax,
+    };
+
+    let pendingBookingId = null;
+    let paymentAuthorized = false;
+    try {
+      // Step 1: create the booking
+      const bookingResponse = await api.post("/booking", bookingPayload);
+      const savedBooking = bookingResponse.data?.data;
+      if (bookingResponse.data?.result !== "Done" || !savedBooking?._id) {
+        throw new Error(bookingResponse.data?.reason || "Could not save your reservation.");
+      }
+      pendingBookingId = savedBooking._id;
+
+      // Step 2: online payment (only for Razorpay)
+      let confirmedPaymentMethod = "COD (Pay at Counter)";
+      if (paymentMode !== "COD") {
+        const orderResponse = await api.post("/booking/order", { checkid: savedBooking._id });
+        const razorpayOrder = orderResponse.data?.data;
+        if (orderResponse.data?.result !== "Done" || !razorpayOrder?.id) {
+          throw new Error(orderResponse.data?.reason || "Could not start Razorpay payment.");
+        }
+
+        const paymentResponse = await openRazorpayModal({
+          amount: total,
+          orderId: razorpayOrder.id,
+          orderName: "Tastora Dining Reservation",
+          description: `${qtySeats} guests • ${selectedZone.name}`,
+          prefill: {
+            name: bookingPayload.guestName,
+            email: bookingPayload.guestEmail,
+            contact: bookingPayload.guestPhone,
+          },
+        });
+        paymentAuthorized = true;
+
+        const verifyResponse = await api.post("/booking/verify", {
+          checkid: savedBooking._id,
+          razorpay_order_id: paymentResponse.razorpay_order_id,
+          razorpay_payment_id: paymentResponse.razorpay_payment_id,
+          razorpay_signature: paymentResponse.razorpay_signature,
+        });
+        if (verifyResponse.data?.result !== "Done") {
+          throw new Error(verifyResponse.data?.message || "Razorpay payment verification failed.");
+        }
+        confirmedPaymentMethod = "Razorpay";
+      }
+
+      // Step 3: reduce seats. COD saves it on the server right away.
+      // For Razorpay only the on-screen count drops here (the payment is already
+      // verified server-side).
+      await reduceSeats(qtySeats, paymentMode === "COD");
+
+      const bookingRef = `RES-${String(savedBooking._id).slice(-6).toUpperCase()}`;
       const booked = bookReservation({
-        dateDisplay: `${selectedDateInfo.displayLong} • ${selectedSlots.join(", ")}`,
+        id: bookingRef,
+        dbId: savedBooking._id,
+        dateDisplay: `${selectedDateInfo.displayLong} • ${stillValidSlots.join(", ")}`,
         zoneName: selectedZone.name,
         zoneImage: selectedZone.image,
         guests: qtySeats,
-        slots: selectedSlots,
-        occasion: occasion,
+        slots: stillValidSlots,
+        occasion,
         dietary: selectedDiet,
-        addOns: selectedAddOns.map((id) => addOnsList.find((a) => a.id === id)?.name).filter(Boolean),
-        guestName: guestName.trim() || userProfile?.name || "Ishaan Sharma",
-        guestPhone: guestPhone.trim() || userProfile?.phone || "+1 (555) 234-5678",
-        guestEmail: guestEmail.trim() || userProfile?.email || "ishaan.sharma@example.com",
-        specialNotes: specialNotes.trim(),
+        addOns: addOnNames,
+        guestName: bookingPayload.guestName,
+        guestPhone: bookingPayload.guestPhone,
+        guestEmail: bookingPayload.guestEmail,
+        specialNotes: bookingPayload.specialNotes,
         coverPricePerGuest: restaurantData.finalPrice,
         addOnTotal: totalAddOnCost,
-        taxes: Number((grandTotal * 0.085).toFixed(2)),
-        total: Number((grandTotal * 1.085).toFixed(2)),
-        depositPaid: Number((grandTotal * 1.085).toFixed(2)),
-        paymentMethod: paymentMode === "COD" ? "COD (Pay at Counter)" : "Net Banking / UPI",
+        taxes: tax,
+        total,
+        depositPaid: paymentMode === "COD" ? 0 : total,
+        paymentMethod: confirmedPaymentMethod,
       });
 
+      setSelectedSlots(stillValidSlots);
       setBookingId(booked.id);
-      setIsSubmitting(false);
       setBookingConfirmed(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
-    }, 600);
+    } catch (error) {
+      if (pendingBookingId && paymentMode !== "COD" && !paymentAuthorized) {
+        await api.post(`/booking/${encodeURIComponent(pendingBookingId)}/cancel`).catch(() => {});
+      }
+      const serverReason = error.response?.data?.reason || error.response?.data?.message;
+      const message = typeof serverReason === "string" ? serverReason : error.message;
+      setErrorMsg((prev) => ({
+        ...prev,
+        general: message?.toLowerCase().includes("dismiss")
+          ? "Payment was cancelled. Your reservation is not confirmed; you can try again."
+          : message || "Could not complete your reservation.",
+      }));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Cancel a reservation
+  const handleCancelReservation = async (reservationId) => {
+    const reservation = reservationsHistory.find(
+      (item) => item.id === reservationId || item.dbId === reservationId
+    );
+    if (!reservation?.dbId) {
+      setReservationActionError("This reservation is not linked to a saved booking.");
+      return;
+    }
+    try {
+      const response = await api.post(`/booking/${encodeURIComponent(reservation.dbId)}/cancel`);
+      if (response.data?.result !== "Done") {
+        throw new Error(response.data?.reason || "Could not cancel this reservation.");
+      }
+      cancelReservation(reservation.id);
+      setReservationActionError("");
+    } catch (error) {
+      setReservationActionError(error.response?.data?.reason || error.message || "Could not cancel this reservation.");
+    }
   };
 
   // Submit Review
@@ -607,20 +779,40 @@ export default function ReservePage() {
     });
   }, [reservationsHistory, historySearch]);
 
-  const handleSaveResRating = (e) => {
+  const handleSaveResRating = async (e) => {
     e.preventDefault();
-    if (!ratingModalRes) return;
-    rateReservation(ratingModalRes.id, resRatingVal, resFeedbackText.trim());
-    setResRatingSuccess(true);
-    setTimeout(() => {
-      setRatingModalRes(null);
-      setResRatingSuccess(false);
-    }, 1500);
+    if (!ratingModalRes?.dbId) {
+      setResRatingError("This reservation is not linked to a saved booking.");
+      return;
+    }
+    setResRatingError("");
+    try {
+      const response = await api.post(`/booking/${encodeURIComponent(ratingModalRes.dbId)}/rating`, {
+        ratingGiven: resRatingVal,
+        feedback: resFeedbackText.trim(),
+      });
+      if (response.data?.result !== "Done") {
+        throw new Error(response.data?.reason || "Could not save your rating.");
+      }
+      rateReservation(ratingModalRes.id, resRatingVal, resFeedbackText.trim());
+      setResRatingSuccess(true);
+      setTimeout(() => {
+        setRatingModalRes(null);
+        setResRatingSuccess(false);
+      }, 1500);
+    } catch (error) {
+      setResRatingError(error.response?.data?.reason || error.message || "Could not save your rating.");
+    }
   };
 
   return (
     <div className="min-h-screen bg-zinc-50/70 text-zinc-900 pt-56 sm:pt-52 md:pt-44 lg:pt-40 pb-20 overflow-x-hidden">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 space-y-6 mt-1 sm:mt-2">
+        {reservationActionError && (
+          <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+            {reservationActionError}
+          </p>
+        )}
 
         {/* ------------------------------------------
             COMPACT HEADER & QUICK INFO
@@ -776,12 +968,13 @@ export default function ReservePage() {
                     key={res.id}
                     type="reservation"
                     item={res}
-                    onCancelReservation={cancelReservation}
+                    onCancelReservation={handleCancelReservation}
                     onOpenRating={(item) => {
                       setRatingModalRes(item);
                       setResRatingVal(item.ratingGiven || 5);
                       setResFeedbackText(item.feedback || "");
                       setResRatingSuccess(false);
+                      setResRatingError("");
                     }}
                     onOpenInvoice={(item) => setVoucherModalRes(item)}
                     onBookAgain={() => {
@@ -868,12 +1061,12 @@ export default function ReservePage() {
                 <div>
                   <p className="text-zinc-400 font-semibold uppercase text-[9px]">Payment</p>
                   <p className="font-bold text-zinc-800 text-[11px] py-3">
-                    {paymentMode === "COD" ? "Pay at Restaurant" : "UPI / Net Banking"}
+                    {paymentMode === "COD" ? "Pay at Restaurant" : "Razorpay (Paid Online)"}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-zinc-400 font-semibold uppercase text-[9px]">Total</p>
-                  <p className="font-black text-rose-600 text-sm">${grandTotal.toFixed(2)}</p>
+                  <p className="font-black text-rose-600 text-sm">₹{totalPayable.toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -1032,8 +1225,12 @@ export default function ReservePage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-                      {restaurantData.seatAvailable} Seats Available
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        seatsLeft > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {seatsLeft > 0 ? `${seatsLeft} Seats Available` : "Fully Booked"}
                     </span>
                     <p className="text-[10px] text-rose-600 font-bold mt-0.5">{restaurantData.discount}% OFF Booking</p>
                   </div>
@@ -1287,7 +1484,7 @@ export default function ReservePage() {
                     )}
                   </div>
 
-                  {/* 3. Combined Guests & Payment in 1 Row (Increased Height & Matched Design) */}
+                  {/* 3. Combined Guests & Payment in 1 Row */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     {/* Guest Stepper */}
                     <div className="space-y-1.5">
@@ -1297,7 +1494,7 @@ export default function ReservePage() {
                           <span>Guests</span>
                         </span>
                         <span className="text-[10px] text-zinc-400 font-normal">
-                          Max {restaurantData.seatAvailable}
+                          Max {seatsLeft}
                         </span>
                       </label>
                       <div className="h-13 bg-zinc-100/90 p-1.5 rounded-2xl border border-zinc-200/90 flex items-center justify-between shadow-2xs">
@@ -1319,7 +1516,7 @@ export default function ReservePage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setQtySeats((p) => Math.min(restaurantData.seatAvailable || 20, p + 1))}
+                          onClick={() => setQtySeats((p) => Math.min(Math.max(seatsLeft, 1), p + 1))}
                           className="w-10 h-10 rounded-xl bg-white hover:bg-zinc-200 text-zinc-800 font-black text-base flex items-center justify-center shadow-2xs transition-all active:scale-95 cursor-pointer"
                           aria-label="Increase guests"
                         >
@@ -1355,19 +1552,19 @@ export default function ReservePage() {
 
                         <button
                           type="button"
-                          onClick={() => setPaymentMode("Net Banking")}
+                          onClick={() => setPaymentMode("Razorpay")}
                           className={`h-full rounded-2xl border flex flex-col items-center justify-center px-2 transition-all cursor-pointer shadow-2xs ${
-                            paymentMode === "Net Banking"
+                            paymentMode === "Razorpay"
                               ? "bg-rose-50 border-rose-400 text-rose-950 font-black ring-2 ring-rose-400/40 shadow-xs"
                               : "bg-white hover:bg-zinc-50 border-zinc-200/90 text-zinc-700 font-bold"
                           }`}
                         >
                           <div className="flex items-center gap-1.5">
                             <CreditCard className="w-3.5 h-3.5 text-rose-600" />
-                            <span className="text-xs font-black">Online UPI</span>
+                            <span className="text-xs font-black">Pay Online</span>
                           </div>
                           <span className="text-[9px] text-zinc-400 font-medium mt-0.5">
-                            Instant Net
+                            Razorpay • UPI / Card
                           </span>
                         </button>
                       </div>
@@ -1380,25 +1577,33 @@ export default function ReservePage() {
                       <div>
                         <p className="text-xs text-zinc-500 font-semibold">Total Payable</p>
                         <p className="text-[10px] text-zinc-400">
-                          ${restaurantData.finalPrice} × {qtySeats} seat{qtySeats > 1 ? "s" : ""}
+                          ₹{restaurantData.finalPrice} × {qtySeats} seat{qtySeats > 1 ? "s" : ""} + add-ons + tax
                         </p>
                       </div>
                       <span className="text-xl font-black text-rose-600">
-                        ${grandTotal.toFixed(2)}
+                        ₹{totalPayable.toFixed(2)}
                       </span>
                     </div>
 
+                    {errorMsg.general && (
+                      <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                        {errorMsg.general}
+                      </p>
+                    )}
+
                     <button
                       type="submit"
-                      disabled={isSubmitting || !restaurantData.status}
+                      disabled={isSubmitting || !restaurantData.status || seatsLeft <= 0}
                       className="w-full py-3.5 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-sm shadow-md shadow-rose-600/20 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
                       {isSubmitting ? (
                         <span>Processing Reservation...</span>
+                      ) : seatsLeft <= 0 ? (
+                        <span>Fully Booked</span>
                       ) : (
                         <>
                           <Calendar className="w-4 h-4" />
-                          <span>Confirm Table (${grandTotal.toFixed(2)})</span>
+                          <span>{paymentMode === "COD" ? "Confirm Table" : "Pay & Reserve"} (₹{totalPayable.toFixed(2)})</span>
                           <ArrowRight className="w-4 h-4" />
                         </>
                       )}
@@ -1480,6 +1685,39 @@ export default function ReservePage() {
         </section>
 
         {/* ------------------------------------------
+            LOGIN REQUIRED MODAL
+        ------------------------------------------ */}
+        {loginModal.visible && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-zinc-100 space-y-4 text-center animate-in zoom-in-95 duration-200">
+              <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 mx-auto flex items-center justify-center">
+                <LogIn className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-zinc-900">Login Required</h3>
+                <p className="text-xs text-zinc-500">{loginModal.message}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLoginModal({ visible: false, message: "" })}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <Link
+                  href="/login"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Log in</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------
             WRITE A REVIEW MODAL
         ------------------------------------------ */}
         {showReviewModal && (
@@ -1552,7 +1790,9 @@ export default function ReservePage() {
                           ? "Very Good (4/5)"
                           : reviewRating === 3
                             ? "Average (3/5)"
-                            : "Fair (2/5)"}
+                            : reviewRating === 2
+                              ? "Fair (2/5)"
+                              : "Poor (1/5)"}
                     </span>
                   </div>
                 </div>
@@ -1653,7 +1893,7 @@ export default function ReservePage() {
                   <div className="col-span-2 pt-1">
                     <span className="text-zinc-400 block text-[10px]">Reserved For:</span>
                     <span className="font-bold text-zinc-900">
-                      {voucherModalRes.guestName || userProfile?.name || "Ishaan Sharma"}
+                      {voucherModalRes.guestName || userProfile?.name || "Guest"}
                     </span>
                     <p className="text-[11px] text-zinc-500">{voucherModalRes.guestPhone}</p>
                   </div>
@@ -1700,7 +1940,7 @@ export default function ReservePage() {
                   </div>
                   <div className="pt-2 border-t border-zinc-200 flex justify-between font-black text-sm text-zinc-900">
                     <span>Total Deposit ({voucherModalRes.paymentMethod}):</span>
-                    <span className="text-rose-600 font-mono">${voucherModalRes.total?.toFixed(2)}</span>
+                    <span className="text-rose-600 font-mono">${Number(voucherModalRes.total || 0).toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -1790,6 +2030,9 @@ export default function ReservePage() {
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Thank you for your rating!</span>
                   </p>
+                )}
+                {resRatingError && (
+                  <p role="alert" className="text-center text-xs font-semibold text-red-600">{resRatingError}</p>
                 )}
 
                 <button

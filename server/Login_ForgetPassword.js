@@ -28,109 +28,129 @@ const schema = require("./Password")
  */
 function login(Model, options = {}) {
     const getSecretKey = options.getSecretKey
-        ?? ((data) => data.role === "Customer" ? process.env.JWT_SECRET_KEY_CUSTOMER : process.env.JWT_SECRET_KEY_ADMIN)
+        ?? ((data) => {
+            if (data.role === "customer") return process.env.JWT_SECRET_KEY_CUSTOMER;
+            if (data.role === "staff")    return process.env.JWT_SECRET_KEY_STAFF;
+            return process.env.JWT_SECRET_KEY_ADMIN; // admin, deliveryBoy, etc.
+        })
 
     return async function (req, res) {
         try {
-            if (!req.body || typeof req.body.username !== "string" || typeof req.body.password !== "string") {
-                return res.status(400).send({
-                    result: "Fail",
-                    reason: "Username and password are required"
-                })
-            }
-
-            let data = await Model.findOne({
-                $or: [
-                    { username: req.body.username.trim() },
-                    { email: req.body.username.trim() }
-                ]
+            const identifier = (req.body.email || req.body.phone || "").trim();
+            if (!req.body || !identifier || typeof req.body.password !== "string") {
+            return res.status(400).send({
+                result: "Fail",
+                reason: "Email and password are required"
             })
+        }
 
-            if (data) {
-                if (await bcrypt.compare(req.body.password, data.password)) {
-                    let key = getSecretKey(data)
+        // Build query conditions: always match by email; only add phoneNo
+        // when the identifier is purely numeric to avoid a Mongoose CastError
+        // (phoneNo is stored as Number, so passing an email string crashes the query).
+        const orConditions = [{ email: identifier }];
+        if (/^\d+$/.test(identifier)) {
+            orConditions.push({ phoneNo: Number(identifier) });
+        }
 
-                    if (!key) {
-                        console.log(`Missing JWT secret for "${Model.modelName}" (role "${data.role}")`)
-                        return res.status(500).send({
+        let data = await Model.findOne({ $or: orConditions }).select("+password")
+
+        if (data) {
+            if (await bcrypt.compare(req.body.password, data.password)) {
+                let key = getSecretKey(data)
+
+                if (!key) {
+                    console.log(`Missing JWT secret for "${Model.modelName}" (role "${data.role}")`)
+                    return res.status(500).send({
+                        result: "Fail",
+                        reason: "Internal Server Error"
+                    })
+                }
+
+                // Update islogin flag without re-saving the full document
+                // (avoids Mongoose re-validation on the password field)
+                await Model.updateOne({ _id: data._id }, { islogin: true });
+
+                // Build a clean response object — strip sensitive fields before
+                // embedding in the JWT and sending back to the client
+                const userResponse = data.toObject();
+                delete userResponse.password;
+                delete userResponse.otp;
+                delete userResponse.otpExpiresAt;
+
+                jwt.sign({ data: userResponse }, key, { expiresIn: "15d" }, (error, token) => {
+                    if (error) {
+                        console.log(error)
+                        res.status(500).send({
                             result: "Fail",
                             reason: "Internal Server Error"
                         })
+                    } else {
+                        const cookieOptions = {
+                            httpOnly: true,
+                            secure: process.env.NODE_ENV === "production",
+                            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+                            maxAge: 15 * 24 * 60 * 60 * 1000,
+                            path: "/"
+                        };
+                        const publicCookieOptions = {
+                            ...cookieOptions,
+                            httpOnly: false
+                        };
+                        res.cookie("token", token, cookieOptions);
+                        res.cookie("userid", data._id.toString(), publicCookieOptions);
+                        res.cookie("islogin", "true", publicCookieOptions);
+                        res.cookie("login", "true", publicCookieOptions);
+                        res.cookie("role", (userResponse.role || "").toLowerCase(), publicCookieOptions);
+                        res.cookie("name", encodeURIComponent(userResponse.name || ""), publicCookieOptions);
+
+                        res.send({
+                            result: "Done",
+                            message: "Login Successful",
+                            token: token,
+                            userid: data._id,
+                            islogin: true,
+                            data: userResponse
+                        })
                     }
-
-                    data.islogin = true;
-                    await data.save();
-
-                    jwt.sign({ data }, key, { expiresIn: "15d" }, (error, token) => {
-                        if (error) {
-                            console.log(error)
-                            res.status(500).send({
-                                result: "Fail",
-                                reason: "Internal Server Error"
-                            })
-                        } else {
-                            const cookieOptions = {
-                                httpOnly: true,
-                                secure: process.env.NODE_ENV === "production",
-                                sameSite: "lax",
-                                maxAge: 15 * 24 * 60 * 60 * 1000
-                            };
-                            res.cookie("token", token, cookieOptions);
-                            res.cookie("userid", data._id.toString(), cookieOptions);
-                            res.cookie("islogin", "true", { ...cookieOptions, httpOnly: false });
-
-                            const userResponse = data.toObject();
-                            delete userResponse.password;
-                            delete userResponse.otp;
-                            delete userResponse.otpExpiresAt;
-
-                            res.send({
-                                result: "Done",
-                                message: "Login Successful",
-                                token: token,
-                                userid: data._id,
-                                islogin: true,
-                                data: userResponse
-                            })
-                        }
-                    })
-                } else {
-                    res.status(401).send({
-                        result: "Fail",
-                        reason: "Invalid Username or Password"
-                    })
-                }
+                })
             } else {
                 res.status(401).send({
                     result: "Fail",
-                    reason: "Invalid Username or Password"
+                    reason: "Invalid Email or Password"
                 })
             }
-        } catch (error) {
-            console.log(error)
-            res.status(500).send({
+        } else {
+            res.status(401).send({
                 result: "Fail",
-                reason: "Internal Server Error"
+                reason: "Invalid Email or Password"
             })
         }
+    } catch (error) {
+        console.log(error)
+        res.status(500).send({
+            result: "Fail",
+            reason: "Internal Server Error"
+        })
     }
+}
 }
 
 /** @param {import("mongoose").Model} Model */
 function forgetPassword1(Model) {
     return async function (req, res) {
         try {
-            if (!req.body || !req.body.username) {
+            const identifier = (req.body.email || req.body.phone || "").trim();
+            if (!req.body || !identifier) {
                 return res.status(400).send({
                     result: "Fail",
-                    reason: "Username or email is required"
+                    reason: "Email is required"
                 })
             }
 
             let data = await Model.findOne({
                 $or: [
-                    { "username": req.body.username },
-                    { "email": req.body.username }
+                    { email: identifier },
+                    { phone: identifier }
                 ]
             })
             if (data) {
@@ -186,17 +206,18 @@ function forgetPassword1(Model) {
 function forgetPassword2(Model) {
     return async function (req, res) {
         try {
-            if (!req.body || !req.body.username) {
+            const identifier = (req.body.email || req.body.phone || "").trim();
+            if (!req.body || !identifier) {
                 return res.status(400).send({
                     result: "Fail",
-                    reason: "Username or email is required"
+                    reason: "Email is required"
                 })
             }
 
             let data = await Model.findOne({
                 $or: [
-                    { "username": req.body.username },
-                    { "email": req.body.username }
+                    { email: identifier },
+                    { phone: identifier }
                 ]
             })
             if (data) {
@@ -230,17 +251,18 @@ function forgetPassword2(Model) {
 function forgetPassword3(Model) {
     return async function (req, res) {
         try {
-            if (!req.body || !req.body.username || typeof req.body.password !== "string") {
+            const identifier = (req.body.email || req.body.phone || "").trim();
+            if (!req.body || !identifier || typeof req.body.password !== "string") {
                 return res.status(400).send({
                     result: "Fail",
-                    reason: "Username and new password are required"
+                    reason: "Email and new password are required"
                 })
             }
 
             let data = await Model.findOne({
                 $or: [
-                    { "username": req.body.username },
-                    { "email": req.body.username }
+                    { email: identifier },
+                    { phone: identifier }
                 ]
             });
 
@@ -301,6 +323,7 @@ function checkEmail(Model) {
     return async function (req, res) {
         try {
             const raw = req.query.email
+            const role = req.query.role // or however role is passed/derived
             const email = typeof raw === "string" ? raw.trim().toLowerCase() : ""
 
             if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -310,7 +333,7 @@ function checkEmail(Model) {
                 })
             }
 
-            const existing = await Model.findOne({ email }).select("_id")
+            const existing = await Model.findOne({ email, role }).select("_id")
 
             res.send({
                 result: "Done",
@@ -334,7 +357,10 @@ function checkEmail(Model) {
 function checkPhone(Model) {
     return async function (req, res) {
         try {
-            const raw = req.query.phone
+            // The User model stores the phone number in `phoneNo`, so we accept
+            // both `phone` and `phoneNo` query params for backward compatibility.
+            const raw = req.query.phoneNo || req.query.phone
+            const role = req.query.role
             const phone = typeof raw === "string" ? raw.trim() : ""
 
             if (!phone || !/^[0-9]{10}$/.test(phone)) {
@@ -344,7 +370,8 @@ function checkPhone(Model) {
                 })
             }
 
-            const existing = await Model.findOne({ phone }).select("_id")
+            // Same phone is allowed if the role differs — uniqueness is per {phoneNo, role}
+            const existing = await Model.findOne({ phoneNo: phone, role }).select("_id")
 
             res.send({
                 result: "Done",

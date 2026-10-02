@@ -146,7 +146,7 @@ export function Footer() {
                 { name: "Combos & Feasts", href: "/combos" },
                 { name: "Reserve a Table", href: "/reserve" },
                 { name: "Special Offers", href: "/#special" },
-                { name: "About Us", href: "/#about" },
+                { name: "About Us", href: "/about#about" },
               ].map((link, idx) => (
                 <li key={idx}>
                   <Link

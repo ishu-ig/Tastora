@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Phone,
   ShoppingBag,
@@ -40,36 +40,31 @@ import { FaFacebookF, FaInstagram, FaTiktok, FaYoutube } from "react-icons/fa6";
 import { AuthModal } from "./AuthModal";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import useCartWishlist from "../hooks/useCartWishlist";
 import api from "../lib/axiosInstance";
+import { useDispatch, useSelector } from "react-redux";
 import { TastoraLogo, TastoraIcon } from "./TastoraLogo";
-
-// Searchable dishes catalog
-const searchCatalog = [
-  { id: "s-1", title: "Paneer Tikka", category: "North Indian", price: "$14.99", image: "/img/category/paneer-tikka.jpg", link: "#category", desc: "Charcoal grilled cottage cheese skewers" },
-  { id: "s-2", title: "Masala Dosa", category: "South Indian", price: "$10.99", image: "/img/category/masala-dosa.jpg", link: "#category", desc: "Crispy golden crepe with potato masala & sambar" },
-  { id: "s-3", title: "Shahi Veg Biryani", category: "Rice & Dum", price: "$12.99", image: "/img/category/veg-biryani.jpg", link: "#category", desc: "Fragrant basmati rice with royal saffron & spices" },
-  { id: "s-4", title: "Chole Bhature", category: "Punjabi Special", price: "$11.99", image: "/img/category/chole-bhature.jpg", link: "#category", desc: "Golden puffed bhature with spicy dark chole" },
-  { id: "s-5", title: "Dal Makhani", category: "Lentils", price: "$13.99", image: "/img/category/dal-makhani.jpg", link: "#category", desc: "12-hour slow simmered black lentils in butter" },
-  { id: "s-6", title: "Classic Smash Burger", category: "Burgers", price: "$14.99", image: "/img/menu/1.jpg", link: "#menu", desc: "Double patty, cheddar & special sauce on brioche" },
-  { id: "s-7", title: "Margherita Royale Pizza", category: "Pizza", price: "$19.99", image: "/img/menu/2.jpg", link: "#menu", desc: "San Marzano tomatoes, buffalo mozzarella & basil" },
-  { id: "s-8", title: "Truffle Mushroom Pasta", category: "Pasta", price: "$16.99", image: "/img/menu/6.jpg", link: "#menu", desc: "Tagliatelle, wild mushrooms & shaved black truffle" },
-  { id: "s-9", title: "Nutella Lava Cake", category: "Desserts", price: "$8.99", image: "/img/menu/5.jpg", link: "#menu", desc: "Molten chocolate cake with vanilla bean gelato" },
-  { id: "s-10", title: "Royal Maharaja Thali", category: "Combos", price: "$19.99", image: "/img/category/royal-thali.jpg", link: "/combos", desc: "Grand feast thali with 8 multi-dish pairings" },
-  { id: "s-11", title: "Mumbai Pav Bhaji", category: "Street Food", price: "$11.49", image: "/img/category/pav-bhaji.jpg", link: "#category", desc: "Butter loaded vegetable mash with toasted pavs" },
-];
+import useCreditCoins from "../hooks/useCreditCoins";
+import { getProduct } from "../Redux/ActionCreators/ProductActionCreators";
+import { getCombo } from "../Redux/ActionCreators/ComboActionCreators";
+import { getThali } from "../Redux/ActionCreators/ThaliActionCreators";
 
 const trendingSearches = ["Paneer Tikka", "Thali Combo", "Biryani", "Burger", "Dosa", "Pizza"];
+const EMPTY_SEARCH_ITEMS = [];
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const isOrdersPage = pathname?.startsWith("/orders");
 
-  const { totalCartCount, superCoinsBalance: contextCoins, userProfile } = useCart();
+  const { favorites, membership, isMember } = useCart();
+  const coinsBalance = useCreditCoins();
+  const { cartCount } = useCartWishlist();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [topAddressDropdownOpen, setTopAddressDropdownOpen] = useState(false);
-  const cartCount = totalCartCount;
+  const wishlistCount = Object.values(favorites || {}).filter(Boolean).length;
 
   // Search State
   const [searchQuery, setSearchQuery] = useState("");
@@ -79,7 +74,7 @@ export function Navbar() {
   const searchInputRef = useRef(null);
   const mobileSearchInputRef = useRef(null);
 
-  // SuperCoins State (Flipkart Style)
+  // CreditCoins state
   const [coinDropdownOpen, setCoinDropdownOpen] = useState(false);
   const coinRef = useRef(null);
 
@@ -91,17 +86,14 @@ export function Navbar() {
   // Active Authenticated User (null if not signed in)
   const currentUser = authUser
     ? {
-        ...authUser,
-        fullName: authUser.name || authUser.fullName || "Customer",
-        name: authUser.name || authUser.fullName || "Customer",
-        phone: authUser.phoneNo || authUser.phone || "",
-        email: authUser.email || "",
-        tier: authUser.tier || "VIP Patron",
-        superCoins: authUser.superCoins ?? (contextCoins || 250),
-      }
+      ...authUser,
+      fullName: authUser.name || authUser.fullName || "Customer",
+      name: authUser.name || authUser.fullName || "Customer",
+      phone: authUser.phoneNo || authUser.phone || "",
+      email: authUser.email || "",
+      tier: authUser.tier || "VIP Patron",
+    }
     : null;
-
-  const coinsBalance = currentUser?.superCoins || contextCoins || 250;
 
   const handleLogout = async () => {
     try {
@@ -109,6 +101,12 @@ export function Navbar() {
     } catch (err) {
       console.warn("Logout error:", err);
     } finally {
+      // Clear stored token so axios interceptor doesn't send stale auth
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("token");
+        localStorage.removeItem("userid");
+        localStorage.removeItem("role");
+      }
       if (setAuthUser) setAuthUser(null);
       setProfileDropdownOpen(false);
       setMobileMenuOpen(false);
@@ -116,28 +114,10 @@ export function Navbar() {
   };
 
   // Customer Saved Addresses
-  const savedAddresses = [
-    {
-      id: 1,
-      tag: "Home",
-      fullAddress: "42 Flavor Street, Apt 4B, Manhattan, NY",
-      eta: "20-30 min",
-    },
-    {
-      id: 2,
-      tag: "Office",
-      fullAddress: "750 7th Ave, Suite 1400, Times Square, NY",
-      eta: "30-40 min",
-    },
-    {
-      id: 3,
-      tag: "Gym",
-      fullAddress: "120 Broadway, Financial District, NY",
-      eta: "35-45 min",
-    },
-  ];
+  const savedAddresses = [];
 
-  const [selectedAddress, setSelectedAddress] = useState(savedAddresses[0]);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  const activeAddress = selectedAddress ?? savedAddresses[0] ?? null;
 
   const profileRef = useRef(null);
   const addressRef = useRef(null);
@@ -200,34 +180,115 @@ export function Navbar() {
     };
   }, []);
 
+  // Live Redux products from store
+  const dispatch = useDispatch();
+  const productState = useSelector((state) => state.ProductStateData);
+  const comboState = useSelector((state) => state.ComboStateData);
+  const thaliState = useSelector((state) => state.ThaliStateData);
+  const reduxProducts = Array.isArray(productState) ? productState : EMPTY_SEARCH_ITEMS;
+  const reduxCombos = Array.isArray(comboState) ? comboState : EMPTY_SEARCH_ITEMS;
+  const reduxThalis = Array.isArray(thaliState) ? thaliState : EMPTY_SEARCH_ITEMS;
+
+  useEffect(() => {
+    if (!reduxProducts.length) dispatch(getProduct());
+    if (!reduxCombos.length) dispatch(getCombo());
+    if (!reduxThalis.length) dispatch(getThali());
+  }, [dispatch, reduxProducts.length, reduxCombos.length, reduxThalis.length]);
+
+  const dynamicSearchCatalog = useMemo(() => {
+    const productItems = (Array.isArray(reduxProducts) ? reduxProducts : [])
+      .filter((item) => item.active !== false && item.name)
+      .map((item) => {
+        const variant = Array.isArray(item.variants) ? item.variants[0] : null;
+        const rawImage = Array.isArray(item.pic) ? item.pic[0] : item.pic;
+        const category = typeof item.maincategory === "object" ? item.maincategory?.name : item.maincategory;
+        return {
+          id: `product-${item._id}`,
+          title: item.name,
+          category: category || "Dish",
+          price: Number(variant?.finalPrice ?? variant?.price) > 0 ? `₹${Math.round(Number(variant.finalPrice ?? variant.price))}` : "",
+          image: rawImage || "/img/category/paneer-tikka.jpg",
+          link: `/menu?search=${encodeURIComponent(item.name)}`,
+          desc: String(item.description || "").replace(/<[^>]*>?/gm, "").slice(0, 70),
+        };
+      });
+    const comboItems = (Array.isArray(reduxCombos) ? reduxCombos : [])
+      .filter((item) => item.name)
+      .map((item) => ({
+        id: `combo-${item._id}`,
+        title: item.name,
+        category: "Combo",
+        price: Number(item.price) > 0 ? `₹${Math.round(Number(item.price))}` : "",
+        image: item.image || item.pic || "/img/category/royal-thali.jpg",
+        link: `/combos?type=combo&search=${encodeURIComponent(item.name)}`,
+        desc: String(item.description || "").replace(/<[^>]*>?/gm, "").slice(0, 70),
+      }));
+    const thaliItems = (Array.isArray(reduxThalis) ? reduxThalis : [])
+      .filter((item) => item.name)
+      .map((item) => ({
+        id: `thali-${item._id}`,
+        title: item.name,
+        category: "Thali",
+        price: Number(item.price) > 0 ? `₹${Math.round(Number(item.price))}` : "",
+        image: item.image || item.pic || "/img/category/royal-thali.jpg",
+        link: `/combos?type=thali&search=${encodeURIComponent(item.name)}`,
+        desc: String(item.description || "").replace(/<[^>]*>?/gm, "").slice(0, 70),
+      }));
+    return [...productItems, ...comboItems, ...thaliItems];
+  }, [reduxProducts, reduxCombos, reduxThalis]);
+
   // Filtered search results
   const filteredDishes = searchQuery.trim()
-    ? searchCatalog.filter(
+    ? dynamicSearchCatalog.filter(
       (dish) =>
         dish.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         dish.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
         dish.desc.toLowerCase().includes(searchQuery.toLowerCase())
     )
-    : searchCatalog.slice(0, 4);
+    : dynamicSearchCatalog.slice(0, 4);
+
+  const submitSharedSearch = (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    const rankedMatches = [...filteredDishes].sort((a, b) => {
+      const score = (item) => {
+        const title = item.title.toLowerCase();
+        const normalizedQuery = query.toLowerCase();
+        if (title === normalizedQuery) return 4;
+        if (title.startsWith(normalizedQuery)) return 3;
+        if (title.includes(normalizedQuery)) return 2;
+        return 1;
+      };
+      return score(b) - score(a);
+    });
+    const destination = rankedMatches[0]?.link || `/menu?search=${encodeURIComponent(query)}`;
+    setSearchOpen(false);
+    setMobileSearchOpen(false);
+    router.push(destination);
+  };
 
   const navLinks = [
     { name: "Home", href: "/" },
     { name: "Menu", href: "/menu" },
     { name: "Combos", href: "/combos" },
     { name: "reserve table ", href: "/reserve" },
-    { name: "About Us", href: "/#about" },
+    { name: "About Us", href: "/about#about" },
     // { name: "Special Deals", href: "/#special" },
-    { name: "ContactUs", href: "/#contact-section" },
+    { name: "ContactUs", href: "/about#contact-section" },
   ];
 
   const mobileNavItems = [
     { name: "Home", href: "/", icon: Home, badge: null },
     { name: "Explore Menu", href: "/menu", icon: Utensils, badge: "Hot" },
     { name: "Royal Combos & Thalis", href: "/combos", icon: Crown, badge: "Chef Special" },
+    // { name: "VIP Membership", href: "/membership", icon: Crown, badge: isMember ? "Active" : "Join VIP" },
     { name: "Reserve a Table", href: "/reserve", icon: Calendar, badge: "Instant" },
     { name: "Special Deals & Offers", href: "/#special", icon: Percent, badge: "Save 20%" },
-    { name: "About Our Heritage", href: "/#about", icon: Sparkles, badge: null },
-    { name: "Contact & Location", href: "/#contact-section", icon: Phone, badge: null },
+    { name: "About Our Heritage", href: "/about#about", icon: Sparkles, badge: null },
+    { name: "Contact & Location", href: "/about#contact-section", icon: Phone, badge: null },
   ];
 
   return (
@@ -264,9 +325,9 @@ export function Navbar() {
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
                 <span>Menu</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 text-[9px] font-extrabold hidden sm:inline-block">
+                {/* <span className="px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 text-[9px] font-extrabold hidden sm:inline-block">
                   Hot
-                </span>
+                </span> */}
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
               </Link>
               <Link
@@ -274,9 +335,9 @@ export function Navbar() {
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
                 <span>Combos</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[9px] font-extrabold hidden xl:inline-block">
+                {/* <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[9px] font-extrabold hidden xl:inline-block">
                   Feasts
-                </span>
+                </span> */}
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
               </Link>
               <Link
@@ -284,22 +345,19 @@ export function Navbar() {
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
                 <span>Dining</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-extrabold hidden xl:inline-block">
-                  Reserve
-                </span>
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
               </Link>
 
               {/* Secondary links (Visible on large screens, or clean tablet spacing) */}
               <a
-                href="/#about"
+                href="/about#about"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden xl:inline-block"
               >
                 About Us
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
               </a>
               <a
-                href="/#contact-section"
+                href="/about#contact-section"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden lg:inline-block"
               >
                 Contact Us
@@ -309,7 +367,7 @@ export function Navbar() {
 
             {/* RIGHT SIDE ACTIONS (Coins + Cart + Profile) */}
             <div className="hidden md:flex items-center gap-2 lg:gap-3">
-              {/* FLIPKART STYLE SUPERCOINS BADGE (On Right Side) */}
+              {/* CreditCoins balance badge */}
               <div className="relative" ref={coinRef}>
                 <button
                   onClick={() => setCoinDropdownOpen((prev) => !prev)}
@@ -317,8 +375,8 @@ export function Navbar() {
                     ? "bg-gradient-to-r from-amber-500/20 via-yellow-400/25 to-amber-500/20 border-amber-400 shadow-md shadow-amber-500/20 ring-2 ring-amber-400/30"
                     : "bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50/60 hover:from-amber-100 hover:to-yellow-100 border-amber-300/80 hover:border-amber-400 shadow-2xs"
                     }`}
-                  aria-label="SuperCoins Balance"
-                  title="Tastora SuperCoins"
+                  aria-label="CreditCoins Balance"
+                  title="Tastora CreditCoins"
                 >
                   {/* 3D Gold Coin Disc */}
                   <div className="relative flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-400 to-amber-200 text-zinc-950 font-black text-[10px] shadow-sm shadow-amber-500/50 group-hover:rotate-12 transition-transform">
@@ -331,7 +389,7 @@ export function Navbar() {
                       {coinsBalance}
                     </span>
                     <span className="text-[10px] font-bold text-amber-900 hidden lg:inline">
-                      Coins
+                      CreditCoins
                     </span>
                   </div>
 
@@ -341,7 +399,7 @@ export function Navbar() {
                   />
                 </button>
 
-                {/* SuperCoins Interactive Dropdown Card */}
+                {/* CreditCoins balance dropdown */}
                 {coinDropdownOpen && (
                   <div className="absolute right-0 mt-2.5 w-76 sm:w-84 rounded-3xl bg-white/98 backdrop-blur-xl border border-amber-200/90 shadow-2xl p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                     {/* Balance Card Banner */}
@@ -354,7 +412,7 @@ export function Navbar() {
                           </div>
                           <div>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-950/80">
-                              SuperCoin Balance
+                              CreditCoin Balance
                             </p>
                             <h3 className="text-xl font-black tracking-tight text-zinc-950 flex items-baseline gap-1">
                               {coinsBalance}
@@ -364,7 +422,7 @@ export function Navbar() {
                         </div>
                         <div className="text-right">
                           <span className="px-2 py-0.5 rounded-full bg-zinc-950/15 text-[10px] font-extrabold uppercase">
-                            = ${(coinsBalance * 0.01).toFixed(2)} Value
+                            = ₹{(coinsBalance / 50).toFixed(2)} Value
                           </span>
                         </div>
                       </div>
@@ -384,7 +442,7 @@ export function Navbar() {
                     {/* Benefits List */}
                     <div className="mt-3 space-y-2">
                       <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">
-                        SuperCoin Benefits
+                        CreditCoin Benefits
                       </p>
 
                       <div className="space-y-1.5 text-xs">
@@ -420,6 +478,21 @@ export function Navbar() {
                 )}
               </div>
 
+              {/* Wishlist Button */}
+              <Link
+                href="/wishlist"
+                className="relative p-2.5 rounded-full text-zinc-700 hover:text-rose-600 hover:bg-rose-50 transition-all duration-200 group focus:outline-none"
+                aria-label="View Wishlist"
+                title="My Wishlist"
+              >
+                <Heart className="w-5 h-5 transition-transform duration-200 group-hover:scale-110" />
+                {wishlistCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-md shadow-rose-500/40 animate-pulse">
+                    {wishlistCount}
+                  </span>
+                )}
+              </Link>
+
               {/* Shopping Cart Button */}
               <Link
                 href="/cart"
@@ -441,16 +514,31 @@ export function Navbar() {
                     onClick={() => setProfileDropdownOpen((prev) => !prev)}
                     className={`flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full border transition-all duration-200 focus:outline-none cursor-pointer ${profileDropdownOpen
                       ? "bg-rose-50 border-rose-200 text-rose-600 shadow-sm"
-                      : "bg-zinc-50 border-zinc-200/80 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300"
+                      : isMember
+                        ? "bg-amber-50/80 border-amber-300/80 text-amber-900 hover:bg-amber-100 shadow-2xs ring-1 ring-amber-400/20"
+                        : "bg-zinc-50 border-zinc-200/80 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300"
                       }`}
                     aria-expanded={profileDropdownOpen}
                     aria-haspopup="true"
                   >
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-rose-500 to-amber-400 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                    <div className={`relative w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-xs ${isMember
+                      ? "bg-gradient-to-tr from-amber-500 to-yellow-400 text-zinc-950 font-black"
+                      : "bg-gradient-to-tr from-rose-500 to-amber-400 text-white"
+                      }`}>
                       {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : <User className="w-3.5 h-3.5" />}
+                      {isMember && (
+                        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] ring-1 ring-white shadow-2xs">
+                          👑
+                        </span>
+                      )}
                     </div>
-                    <span className="text-xs font-semibold text-zinc-800">
+                    <span className="text-xs font-semibold text-zinc-800 flex items-center gap-1">
                       {(currentUser.fullName || currentUser.name || "Customer").split(" ")[0]}
+                      {isMember && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-[9px] font-black text-amber-950 uppercase tracking-tight">
+                          VIP
+                        </span>
+                      )}
                     </span>
                     <ChevronDown
                       className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${profileDropdownOpen ? "rotate-180 text-rose-600" : ""
@@ -488,17 +576,24 @@ export function Navbar() {
                     {/* User Header */}
                     <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-rose-600 via-pink-500 to-amber-400 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-rose-500/20">
-                        <User className="w-5 h-5" />
+                        {isMember ? <Crown className="w-5 h-5 text-amber-200" /> : <User className="w-5 h-5" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <p className="text-sm font-bold text-zinc-900 truncate">
                             {currentUser.fullName || currentUser.name || "Customer"}
                           </p>
-                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700 rounded-full flex items-center gap-0.5">
-                            <Sparkles className="w-2.5 h-2.5 text-rose-500" />
-                            VIP
-                          </span>
+                          {isMember ? (
+                            <span className="px-2 py-0.5 text-[10px] font-black bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 rounded-full flex items-center gap-1 shadow-xs">
+                              <Crown className="w-2.5 h-2.5" />
+                              {membership?.plan?.name || "VIP"} Member
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700 rounded-full flex items-center gap-0.5">
+                              <Sparkles className="w-2.5 h-2.5 text-rose-500" />
+                              VIP
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-zinc-500 truncate">
                           {currentUser.phone || currentUser.phoneNo || currentUser.email}
@@ -508,6 +603,20 @@ export function Navbar() {
 
                     {/* Menu Items */}
                     <div className="px-2 py-1.5 space-y-0.5">
+                      <Link
+                        href="/membership"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold text-amber-900 bg-amber-50/80 hover:bg-amber-100 transition-colors border border-amber-200/70"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Crown className="w-4 h-4 text-amber-600" />
+                          <span>VIP Membership</span>
+                        </div>
+                        <span className="px-2 py-0.5 text-[10px] font-black bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-900 rounded-full shadow-2xs">
+                          {isMember ? "Active" : "Unlock"}
+                        </span>
+                      </Link>
+
                       <Link
                         href="/profile"
                         onClick={() => setProfileDropdownOpen(false)}
@@ -532,12 +641,19 @@ export function Navbar() {
                       </Link>
 
                       <Link
-                        href="/profile"
+                        href="/wishlist"
                         onClick={() => setProfileDropdownOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-zinc-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium text-zinc-700 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                       >
-                        <Heart className="w-4 h-4 text-zinc-400" />
-                        <span>Favorites</span>
+                        <div className="flex items-center gap-3">
+                          <Heart className="w-4 h-4 text-zinc-400" />
+                          <span>My Wishlist</span>
+                        </div>
+                        {wishlistCount > 0 && (
+                          <span className="px-2 py-0.5 text-[11px] font-bold bg-rose-100 text-rose-700 rounded-full">
+                            {wishlistCount}
+                          </span>
+                        )}
                       </Link>
 
                       <Link
@@ -589,7 +705,7 @@ export function Navbar() {
               <button
                 onClick={() => setCoinDropdownOpen((prev) => !prev)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300/80 text-zinc-900 cursor-pointer shadow-2xs active:scale-95 transition-transform"
-                aria-label="SuperCoins"
+                aria-label="CreditCoins"
               >
                 <span className="text-xs">🪙</span>
                 <span className="text-xs font-black text-amber-900">{coinsBalance}</span>
@@ -638,30 +754,36 @@ export function Navbar() {
                 >
                   <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                   <span className="text-[11px] text-zinc-500 font-medium shrink-0">Deliver to:</span>
-                  <span className="text-xs font-black text-zinc-900 group-hover:text-rose-600 transition-colors flex items-center gap-0.5 truncate">
-                    {selectedAddress.tag}
-                    <ChevronDown className={`w-3 h-3 text-zinc-400 group-hover:text-rose-600 transition-transform ${topAddressDropdownOpen ? "rotate-180 text-rose-600" : ""}`} />
-                  </span>
-                  <span className="text-[10px] text-zinc-400 truncate max-w-[120px]">
-                    ({selectedAddress.fullAddress})
-                  </span>
+                  {activeAddress ? (
+                    <>
+                      <span className="text-xs font-black text-zinc-900 group-hover:text-rose-600 transition-colors flex items-center gap-0.5 truncate">
+                        {activeAddress.tag}
+                        <ChevronDown className={`w-3 h-3 text-zinc-400 group-hover:text-rose-600 transition-transform ${topAddressDropdownOpen ? "rotate-180 text-rose-600" : ""}`} />
+                      </span>
+                      <span className="text-[10px] text-zinc-400 truncate max-w-[120px]">
+                        ({activeAddress.fullAddress})
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-black text-zinc-900">Add address</span>
+                  )}
                 </button>
 
                 {/* Mobile Address Dropdown */}
-                {topAddressDropdownOpen && (
+                {topAddressDropdownOpen && activeAddress && savedAddresses.length > 0 && (
                   <div className="absolute left-0 mt-2 w-72 rounded-2xl bg-white/98 backdrop-blur-xl border border-zinc-200 shadow-2xl p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-100">
                       <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
                         Select Delivery Address
                       </span>
                       <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full">
-                        {selectedAddress.eta}
+                        {activeAddress.eta}
                       </span>
                     </div>
 
                     <div className="space-y-1.5">
                       {savedAddresses.map((addr) => {
-                        const isSelected = selectedAddress.id === addr.id;
+                        const isSelected = activeAddress?.id === addr.id;
                         return (
                           <button
                             key={addr.id}
@@ -695,7 +817,7 @@ export function Navbar() {
               {/* Mobile Free Delivery Badge */}
               <div className="flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/80 shrink-0 shadow-2xs">
                 <Flame className="w-3 h-3 text-rose-500 animate-pulse" />
-                <span>Free Del. &gt; $30</span>
+                <span>Free Del. on ₹250+</span>
               </div>
             </div>
 
@@ -712,6 +834,7 @@ export function Navbar() {
                       setSearchQuery(e.target.value);
                       setSearchOpen(true);
                     }}
+                    onKeyDown={submitSharedSearch}
                     onFocus={() => setSearchOpen(true)}
                     placeholder="Search gourmet dishes, combos, pizzas..."
                     className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-medium bg-zinc-100/80 hover:bg-zinc-100 focus:bg-white text-zinc-900 placeholder-zinc-400 border border-transparent focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 transition-all shadow-2xs"
@@ -729,55 +852,88 @@ export function Navbar() {
                     </button>
                   )}
                 </div>
+                {searchOpen && searchQuery.trim() && (
+                  <div className="absolute top-full left-0 right-0 mt-2 max-h-80 overflow-y-auto rounded-2xl bg-white border border-zinc-200 shadow-xl p-2 z-[70]">
+                    {filteredDishes.length ? filteredDishes.slice(0, 5).map((item) => (
+                      <Link
+                        key={item.id}
+                        href={item.link}
+                        onClick={() => setSearchOpen(false)}
+                        className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-rose-50"
+                      >
+                        <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-bold text-zinc-900">{item.title}</span>
+                          <span className="block truncate text-[10px] text-zinc-500">{item.category}</span>
+                        </span>
+                        {item.price && <span className="text-xs font-black text-rose-600">{item.price}</span>}
+                      </Link>
+                    )) : (
+                      <p className="px-3 py-4 text-center text-xs text-zinc-500">No matching menu items, combos, or Thalis.</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* DESKTOP & TABLET SUB-HEADER (Spacious Adaptive Layout) */}
-          <div className="hidden md:flex items-center justify-between gap-3 lg:gap-4">
-            {/* Tablet & Desktop Address Selector */}
+          <div className="hidden md:flex items-center justify-between gap-2 lg:gap-3">
+            {/* Tablet & Desktop Address Selector (compact) */}
             <div className="relative shrink-0" ref={addressRef}>
               <button
                 onClick={() => setTopAddressDropdownOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 lg:gap-2 px-2.5 lg:px-3 py-1.5 rounded-full bg-zinc-50 hover:bg-rose-50 border border-zinc-200 hover:border-rose-300 text-zinc-800 transition-all shadow-2xs group cursor-pointer text-xs"
+                className="flex items-center gap-1.5 px-2 lg:px-2.5 py-1.5 rounded-full bg-zinc-50 hover:bg-rose-50 border border-zinc-200 hover:border-rose-300 text-zinc-800 transition-all shadow-2xs group cursor-pointer text-xs"
                 aria-label="Change delivery address"
               >
-                <span className="flex items-center justify-center w-5 h-5 lg:w-6 lg:h-6 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 text-white shadow-xs group-hover:scale-105 transition-transform shrink-0">
-                  <MapPin className="w-3.5 h-3.5 lg:w-3.5 lg:h-3.5" />
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 text-white shadow-xs group-hover:scale-105 transition-transform shrink-0">
+                  <MapPin className="w-3 h-3" />
                 </span>
-                <div className="text-left flex items-center gap-1 text-xs">
-                  <span className="text-zinc-500 font-medium hidden lg:inline">Deliver to:</span>
-                  <span className="font-extrabold text-zinc-900 group-hover:text-rose-600 transition-colors">
-                    {selectedAddress.tag}
+
+                {activeAddress ? (
+                  <div className="text-left flex items-center gap-1 text-xs min-w-0">
+                    <span className="text-zinc-500 font-medium hidden xl:inline">Deliver to:</span>
+                    <span className="font-extrabold text-zinc-900 group-hover:text-rose-600 transition-colors">
+                      {activeAddress.tag}
+                    </span>
+                    <span className="text-zinc-400 font-normal max-w-[70px] xl:max-w-[110px] truncate hidden lg:inline">
+                      ({activeAddress.fullAddress})
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-left flex items-center gap-1 text-xs min-w-0">
+                    <span className="text-zinc-500 font-medium">Deliver to:</span>
+                    <span className="font-extrabold text-zinc-900">Add address</span>
+                  </div>
+                )}
+
+                {activeAddress && (
+                  <span className="hidden lg:inline-block px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/60 shrink-0">
+                    {activeAddress.eta}
                   </span>
-                  <span className="text-zinc-400 font-normal max-w-[90px] lg:max-w-[180px] xl:max-w-[240px] truncate hidden md:inline">
-                    ({selectedAddress.fullAddress})
-                  </span>
-                </div>
-                <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/60 shrink-0">
-                  {selectedAddress.eta}
-                </span>
+                )}
+
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-zinc-400 group-hover:text-rose-600 transition-transform duration-200 ${topAddressDropdownOpen ? "rotate-180 text-rose-600" : ""
+                  className={`w-3.5 h-3.5 text-zinc-400 group-hover:text-rose-600 transition-transform duration-200 shrink-0 ${topAddressDropdownOpen ? "rotate-180 text-rose-600" : ""
                     }`}
                 />
               </button>
 
               {/* Desktop Address Dropdown Modal */}
-              {topAddressDropdownOpen && (
+              {topAddressDropdownOpen && activeAddress && savedAddresses.length > 0 && (
                 <div className="absolute left-0 mt-2 w-80 rounded-2xl bg-white/98 backdrop-blur-xl border border-zinc-200 shadow-2xl p-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-100">
                     <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
                       Select Delivery Address
                     </span>
                     <span className="text-[11px] text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-full">
-                      {selectedAddress.eta}
+                      {activeAddress.eta}
                     </span>
                   </div>
 
                   <div className="space-y-1.5">
                     {savedAddresses.map((addr) => {
-                      const isSelected = selectedAddress.id === addr.id;
+                      const isSelected = activeAddress?.id === addr.id;
                       return (
                         <button
                           key={addr.id}
@@ -808,9 +964,9 @@ export function Navbar() {
               )}
             </div>
 
-            {/* Desktop Center Search Bar */}
+            {/* Desktop Center Search Bar (takes all remaining width) */}
             {!isOrdersPage ? (
-              <div className="flex-1 max-w-2xl lg:max-w-3xl xl:max-w-4xl relative" ref={searchRef}>
+              <div className="flex-1 min-w-0 relative" ref={searchRef}>
                 <div className="relative flex items-center w-full">
                   <Search className="w-4 h-4 text-rose-500 absolute left-4 pointer-events-none transition-colors" />
                   <input
@@ -821,9 +977,10 @@ export function Navbar() {
                       setSearchQuery(e.target.value);
                       setSearchOpen(true);
                     }}
+                    onKeyDown={submitSharedSearch}
                     onFocus={() => setSearchOpen(true)}
-                    placeholder="Search dishes, royal thalis, burgers, pizzas, desserts..."
-                    className="w-full pl-11 pr-16 py-2.5 rounded-full text-xs sm:text-sm font-medium bg-zinc-50 hover:bg-zinc-100/80 focus:bg-white text-zinc-900 placeholder-zinc-400 border border-zinc-200/90 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all shadow-2xs"
+                    placeholder="Search menu dishes, combos, and Thalis..."
+                    className="w-full pl-11 pr-16 py-2.5 rounded-full text-xs sm:text-sm font-medium bg-zinc-50 hover:bg-zinc-100/80 focus:bg-white text-zinc-900 placeholder-zinc-400 border border-zinc-200/90 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all shadow-2xs truncate"
                   />
                   <div className="absolute right-3.5 flex items-center gap-1">
                     {searchQuery ? (
@@ -838,7 +995,7 @@ export function Navbar() {
                         <X className="w-4 h-4" />
                       </button>
                     ) : (
-                      <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-semibold text-zinc-400 bg-zinc-100 rounded-md border border-zinc-200 select-none">
+                      <kbd className="hidden lg:inline-flex items-center px-2 py-0.5 text-[10px] font-semibold text-zinc-400 bg-zinc-100 rounded-md border border-zinc-200 select-none">
                         ⌘K
                       </kbd>
                     )}
@@ -881,16 +1038,14 @@ export function Navbar() {
                           ? `Results (${filteredDishes.length})`
                           : "Recommended for You"}
                       </span>
-                      <span className="text-[10px] text-zinc-400 font-medium">
-                        Tastora Menu
-                      </span>
+                      <span className="text-[10px] text-zinc-400 font-medium">Menu, Combos &amp; Thalis</span>
                     </div>
 
                     {/* Results List */}
                     {filteredDishes.length > 0 ? (
                       <div className="space-y-1">
                         {filteredDishes.map((dish) => (
-                          <a
+                          <Link
                             key={dish.id}
                             href={dish.link}
                             onClick={() => setSearchOpen(false)}
@@ -910,17 +1065,15 @@ export function Navbar() {
                                   {dish.price}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[9px] font-bold">
+                              <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[9px] font-bold shrink-0">
                                   {dish.category}
                                 </span>
-                                <p className="text-[10px] text-zinc-400 truncate max-w-[200px]">
-                                  {dish.desc}
-                                </p>
+                                <p className="text-[10px] text-zinc-400 truncate">{dish.desc}</p>
                               </div>
                             </div>
                             <ArrowUpRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-rose-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all shrink-0" />
-                          </a>
+                          </Link>
                         ))}
                       </div>
                     ) : (
@@ -943,11 +1096,12 @@ export function Navbar() {
               <div className="flex-1" />
             )}
 
-            {/* Desktop Free Delivery Highlight */}
+            {/* Desktop Free Delivery Highlight (shorter text on smaller screens) */}
             <div className="flex items-center shrink-0 text-xs">
-              <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-800 font-bold shadow-2xs">
+              <div className="flex items-center gap-1.5 px-2.5 xl:px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-800 font-bold shadow-2xs whitespace-nowrap">
                 <Flame className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-                <span>Free Delivery &gt; $30</span>
+                <span className="hidden xl:inline">Free Delivery on ₹250+</span>
+                <span className="xl:hidden">Free ₹250+</span>
               </div>
             </div>
           </div>
@@ -1018,7 +1172,7 @@ export function Navbar() {
               <div className="flex items-center justify-between pt-2 border-t border-rose-100/80 text-[11px]">
                 <div className="flex items-center gap-1.5 font-bold text-amber-900">
                   <Coins className="w-3.5 h-3.5 text-amber-500" />
-                  <span>{coinsBalance} SuperCoins</span>
+                  <span>{coinsBalance} CreditCoins</span>
                 </div>
                 <span className="text-[10px] text-rose-600 font-semibold">Tier 1 • Active</span>
               </div>
@@ -1069,9 +1223,13 @@ export function Navbar() {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Delivering To</p>
-                <p className="text-xs font-bold text-zinc-800 truncate">
-                  {selectedAddress.tag} • <span className="font-normal text-zinc-500">{selectedAddress.eta}</span>
-                </p>
+                {activeAddress ? (
+                  <p className="text-xs font-bold text-zinc-800 truncate">
+                    {activeAddress.tag} • <span className="font-normal text-zinc-500">{activeAddress.eta}</span>
+                  </p>
+                ) : (
+                  <p className="text-xs font-bold text-zinc-800 truncate">Add an address</p>
+                )}
               </div>
             </div>
             <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/70 text-emerald-700 text-[10px] font-bold shrink-0">
@@ -1090,12 +1248,17 @@ export function Navbar() {
               <span>Orders</span>
             </Link>
             <Link
-              href="/profile"
+              href="/wishlist"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-pink-50/60 hover:bg-pink-100/70 border border-pink-100 transition-all text-[11px] font-bold text-zinc-800 gap-1 text-center"
+              className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-pink-50/60 hover:bg-pink-100/70 border border-pink-100 transition-all text-[11px] font-bold text-zinc-800 gap-1 text-center relative"
             >
               <Heart className="w-4 h-4 text-pink-500" />
-              <span>Favorites</span>
+              <span>Wishlist</span>
+              {wishlistCount > 0 && (
+                <span className="absolute top-1 right-2 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center">
+                  {wishlistCount}
+                </span>
+              )}
             </Link>
             <button
               onClick={() => {

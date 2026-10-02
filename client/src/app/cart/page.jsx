@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShoppingBag,
   Trash2,
@@ -27,49 +29,31 @@ import {
   Bike,
   Store,
   MapPin,
+  Home,
+  Building,
+  CheckCircle2,
   Copy,
   CheckCheck,
   Navigation,
   Info,
+  Crown,
 } from "lucide-react";
+import { Menucard } from "@/Component/MenuCard";
 import { useCart } from "../../context/CartContext";
-import { fullMenuCatalog } from "../menu/page";
-
-// Frequently Added Items
-const frequentlyAdded = [
-  {
-    id: "ds-1",
-    title: "Warm Shahi Gulab Jamun (2 Pcs)",
-    price: 6.99,
-    category: "Desserts",
-    image: "/img/category/gulab-jamun.jpg",
-  },
-  {
-    id: "bv-1",
-    title: "Royal Amritsari Malai Lassi",
-    price: 5.99,
-    category: "Beverages",
-    image: "/img/category/beverage-lassi.jpg",
-  },
-  {
-    id: "bv-3",
-    title: "Masala Kulhad Chai (Hot)",
-    price: 3.99,
-    category: "Beverages",
-    image: "/img/category/beverage-lassi.jpg",
-  },
-  {
-    id: "ni-8",
-    title: "Butter Garlic Naan",
-    price: 4.49,
-    category: "Tandoori Breads",
-    image: "/img/category/dal-makhani.jpg",
-  },
-];
+import { getProduct, updateProduct } from "@/Redux/ActionCreators/ProductActionCreators";
+import { getCoupon, validateCoupon } from "@/Redux/ActionCreators/CouponActionCreators";
+import { createCheckout } from "@/Redux/ActionCreators/CheckoutActionCreators";
+import useCartLines from "@/hooks/useCartLines";
+import useCartWishlist from "@/hooks/useCartWishlist";
+import { mapProductToDish } from "@/lib/MenuDish";
+import { computeCartTotals, CART_RULES } from "@/lib/cartRules";
 
 export default function CartPage() {
+  const GEOAPIFY_API_KEY = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY || "";
+  const router = useRouter();
+
+  // UI-only state (order mode, notes, tip, address...) still lives in the context.
   const {
-    cartItems,
     itemNotes,
     orderMode,
     setOrderMode,
@@ -77,47 +61,352 @@ export default function CartPage() {
     setTableNumber,
     pickupTime,
     setPickupTime,
-    addToCart,
-    updateQuantity,
-    removeFromCart,
-    clearCart,
-    loadSampleCart,
     setItemCustomNote,
-    totalCartCount,
-    subtotal,
-    freeDeliveryThreshold,
-    isFreeDelivery,
-    freeDeliveryShortfall,
-    deliveryFee,
     appliedCoupon,
     setAppliedCoupon,
-    availableCoupons,
-    discountAmount,
     deliveryTip,
     setDeliveryTip,
     optOutCutlery,
     setOptOutCutlery,
     deliveryInstruction,
     setDeliveryInstruction,
-    useSuperCoins,
-    setUseSuperCoins,
-    superCoinsBalance,
-    superCoinsDiscount,
-    taxAmount,
-    grandTotal,
+    useCreditCoins,
+    setUseCreditCoins,
+    creditCoinsBalance,
     savedAddresses,
     selectedAddressId,
+    setSelectedAddressId,
+    addAddress,
+    isMember,
+    membership,
   } = useCart();
+
+  // Cart lines, quantities and subtotal come from Redux (CartStateData -> MongoDB).
+  const {
+    cartItems,
+    dishById,
+    loaded: cartLoaded,
+    totalCartCount,
+    subtotal,
+    updateQuantity,
+    removeFromCart,
+    clearCart,
+  } = useCartLines();
+
+  // Delivery / tax / coupon / total are derived from that subtotal.
+  // Shipping rule (CART_RULES): ₹150 when subtotal is below ₹1000, free above.
+  const memberDiscountPercent = membership?.plan?.discountPercent || 10;
+  const {
+    freeDeliveryThreshold,
+    isFreeDelivery,
+    freeDeliveryShortfall,
+    deliveryFee,
+    discountAmount,
+    memberDiscountAmount,
+    creditCoinsDiscount,
+    coinsConsumed,
+    taxAmount,
+    grandTotal,
+    creditCoinsToEarn,
+  } = useMemo(
+    () => computeCartTotals({
+      subtotal,
+      orderMode,
+      appliedCoupon,
+      deliveryTip,
+      useCreditCoins,
+      creditCoinsBalance,
+      isMember,
+      memberDiscountPercent,
+    }),
+    [subtotal, orderMode, appliedCoupon, deliveryTip, useCreditCoins, creditCoinsBalance, isMember, memberDiscountPercent]
+  );
+
+
+  // "Frequently added together" now uses real products, added through the same Redux cart.
+  const dispatch = useDispatch();
+  const productState = useSelector((st) => st.ProductStateData);
+  const couponState = useSelector((st) => st.CouponStateData);
+  const {
+    addToCart,
+    updateQty,
+    addToWishlist,
+    isInCart,
+    isInWishlist,
+    getQty,
+  } = useCartWishlist();
+
+  useEffect(() => {
+    dispatch(getProduct());
+    dispatch(getCoupon());
+  }, [dispatch]);
+
+  const products = Array.isArray(productState) ? productState : [];
+
+  const availableCoupons = useMemo(() => {
+    const now = Date.now();
+    return (Array.isArray(couponState.coupons) ? couponState.coupons : [])
+      .filter((coupon) => (
+        coupon.active !== false &&
+        new Date(coupon.validFrom).getTime() <= now &&
+        new Date(coupon.validTill).getTime() >= now
+      ))
+      .map((coupon) => {
+        const minOrder = Number(coupon.minOrderValue) || 0;
+        const isPercentage = coupon.discountType === "percentage";
+        const valueLabel = isPercentage
+          ? `${coupon.discountValue}% OFF`
+          : `₹${coupon.discountValue} OFF`;
+
+        return {
+          ...coupon,
+          discountPercent: isPercentage ? Number(coupon.discountValue) : 0,
+          discountAmount: isPercentage ? 0 : Number(coupon.discountValue),
+          minOrder,
+          maxDiscount: Number(coupon.maxDiscountAmount) || 0,
+          description: coupon.description || valueLabel,
+          terms: `Minimum order ₹${minOrder.toFixed(2)}`,
+          tag: valueLabel,
+          badgeColor: "from-rose-600 to-amber-500",
+        };
+      });
+  }, [couponState.coupons]);
+
+  const recommended = useMemo(() => {
+    const all = (Array.isArray(productState) ? productState : [])
+      .filter((p) => p.active !== false)
+      .map(mapProductToDish);
+    const pref = /dessert|beverage|drink|bread|naan|side|sweet|lassi/i;
+    const picks = all.filter((d) => pref.test(d.mainCategory) || pref.test(d.subCategory));
+    const rest = all.filter((d) => !picks.includes(d));
+    return [...picks, ...rest].slice(0, 4);
+  }, [productState]);
 
   const [couponInput, setCouponInput] = useState("");
   const [couponError, setCouponError] = useState("");
   const [couponSuccess, setCouponSuccess] = useState("");
+  const [pendingCouponCode, setPendingCouponCode] = useState(null);
   const [customTipActive, setCustomTipActive] = useState(false);
   const [customTipValue, setCustomTipValue] = useState("");
   const [activeNoteItemId, setActiveNoteItemId] = useState(null);
   const [isCouponsModalOpen, setIsCouponsModalOpen] = useState(false);
   const [couponFilter, setCouponFilter] = useState("all");
   const [copiedCouponCode, setCopiedCouponCode] = useState(null);
+
+  // Order placement state
+  const [paymentMode, setPaymentMode] = useState("COD"); // "COD" | "Net Banking"
+  const [placing, setPlacing] = useState(false);
+  const [orderError, setOrderError] = useState("");
+
+  useEffect(() => {
+    if (
+      !pendingCouponCode ||
+      !couponState.couponsLoaded ||
+      couponState.validationLoading ||
+      !couponState.validationResult
+    ) return;
+
+    const result = couponState.validationResult;
+    if (result.valid && result.result === "Done") {
+      const coupon = availableCoupons.find((item) => item.code === (result.code || pendingCouponCode));
+      if (coupon) {
+        setAppliedCoupon(coupon);
+        setCouponSuccess(`Coupon ${coupon.code} applied successfully!`);
+        setCouponInput("");
+        if (isCouponsModalOpen) setIsCouponsModalOpen(false);
+        setTimeout(() => setCouponSuccess(""), 4000);
+      } else {
+        setCouponError("This coupon is no longer available.");
+      }
+    } else {
+      setCouponError(result.reason || result.message || "Unable to apply this coupon.");
+    }
+
+    setPendingCouponCode(null);
+  }, [
+    availableCoupons,
+    couponState.couponsLoaded,
+    couponState.validationLoading,
+    couponState.validationResult,
+    isCouponsModalOpen,
+    pendingCouponCode,
+    setAppliedCoupon,
+  ]);
+
+  useEffect(() => {
+    if (!couponState.couponsLoaded || !appliedCoupon) return;
+
+    const currentCoupon = availableCoupons.find((coupon) => coupon.code === appliedCoupon.code);
+    if (!currentCoupon || subtotal < currentCoupon.minOrder) {
+      setAppliedCoupon(null);
+      if (currentCoupon) setCouponError(`Minimum order of ₹${currentCoupon.minOrder.toFixed(2)} required.`);
+    } else if (appliedCoupon._id !== currentCoupon._id) {
+      setAppliedCoupon(currentCoupon);
+    }
+  }, [appliedCoupon, availableCoupons, couponState.couponsLoaded, setAppliedCoupon, subtotal]);
+
+  // Address Modal & Form State
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+  const [newAddress, setNewAddress] = useState({
+    tag: "Home",
+    recipientName: "",
+    phone: "",
+    addressLine: "",
+    landmark: "",
+    city: "",
+    state: "",
+    zipCode: "",
+    lat: null,
+    lng: null,
+  });
+
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const locationSearchTimer = useRef(null);
+  const locationSearchController = useRef(null);
+
+  useEffect(() => () => {
+    clearTimeout(locationSearchTimer.current);
+    locationSearchController.current?.abort();
+  }, []);
+
+  const applyLocationFeature = (feature) => {
+    const place = feature?.properties || {};
+    const coordinates = feature?.geometry?.coordinates || [];
+    const lat = Number(place.lat ?? coordinates[1]);
+    const lng = Number(place.lon ?? coordinates[0]);
+    const addressLine = place.address_line1 || place.formatted || "";
+
+    setNewAddress((current) => ({
+      ...current,
+      addressLine,
+      city: place.city || place.town || place.village || place.municipality || "",
+      state: place.state || "",
+      zipCode: place.postcode || "",
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
+    }));
+    setLocationQuery(place.formatted || addressLine);
+    setLocationSuggestions([]);
+    setLocationError("");
+  };
+
+  const handleQueryChange = (e) => {
+    const value = e.target.value;
+    setLocationQuery(value);
+    setNewAddress((current) => ({ ...current, addressLine: value, lat: null, lng: null }));
+    setLocationError("");
+
+    clearTimeout(locationSearchTimer.current);
+    locationSearchController.current?.abort();
+
+    if (value.trim().length < 3) {
+      setLocationSuggestions([]);
+      setLocationLoading(false);
+      return;
+    }
+
+    if (!GEOAPIFY_API_KEY) {
+      setLocationSuggestions([]);
+      setLocationError("Address search is unavailable. Enter the address manually.");
+      return;
+    }
+
+    locationSearchTimer.current = setTimeout(async () => {
+      const controller = new AbortController();
+      locationSearchController.current = controller;
+      setLocationLoading(true);
+
+      try {
+        const params = new URLSearchParams({ text: value, limit: "5", apiKey: GEOAPIFY_API_KEY });
+        const response = await fetch(
+          `https://api.geoapify.com/v1/geocode/autocomplete?${params}`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) throw new Error("Address search failed");
+        const json = await response.json();
+        setLocationSuggestions(Array.isArray(json.features) ? json.features : []);
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setLocationSuggestions([]);
+          setLocationError("Could not search addresses. Enter the address manually.");
+        }
+      } finally {
+        if (locationSearchController.current === controller) setLocationLoading(false);
+      }
+    }, 400);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Location is not available in this browser.");
+      return;
+    }
+    if (!GEOAPIFY_API_KEY) {
+      setLocationError("Location lookup is unavailable. Enter the address manually.");
+      return;
+    }
+
+    setLocationError("");
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const params = new URLSearchParams({
+            lat: String(coords.latitude),
+            lon: String(coords.longitude),
+            apiKey: GEOAPIFY_API_KEY,
+          });
+          const response = await fetch(`https://api.geoapify.com/v1/geocode/reverse?${params}`);
+          if (!response.ok) throw new Error("Reverse geocoding failed");
+          const json = await response.json();
+          const feature = json.features?.[0];
+          if (!feature) throw new Error("No address found for this location");
+          applyLocationFeature({
+            ...feature,
+            properties: { ...feature.properties, lat: coords.latitude, lon: coords.longitude },
+          });
+        } catch {
+          setLocationError("Could not find an address for your current location.");
+        } finally {
+          setLocationLoading(false);
+        }
+      },
+      () => {
+        setLocationError("Location permission was denied.");
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSaveNewAddress = (e) => {
+    e.preventDefault();
+    if (!newAddress.addressLine || !newAddress.recipientName) return;
+    addAddress({
+      ...newAddress,
+      isDefault: false,
+      type: newAddress.tag.toLowerCase(),
+    });
+    setShowAddAddressModal(false);
+    setNewAddress({
+      tag: "Home",
+      recipientName: "",
+      phone: "",
+      addressLine: "",
+      landmark: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      lat: null,
+      lng: null,
+    });
+    setLocationQuery("");
+    setLocationSuggestions([]);
+    setLocationError("");
+  };
 
   // Dine-in Special Requests State
   const [serveTogether, setServeTogether] = useState(true);
@@ -128,37 +417,80 @@ export default function CartPage() {
   const currentAddress =
     savedAddresses.find((a) => a.id === selectedAddressId) || savedAddresses[0];
 
-  // Apply Coupon Handler
+  // ----------------------------------------------------
+  // CART LOGIC: variants, stock, quantity, delete, place order
+  // ----------------------------------------------------
+
+  // Find the product + variant behind a cart dish.
+  // (price / stock live in Product.variants[], not on the product itself)
+  const resolveProductAndVariant = (dish) => {
+    const productId = String(dish.productId || dish.product?._id || dish._id || dish.id);
+    const product = products.find((p) => String(p._id) === productId);
+    const variantId = dish.variantId || dish.variant?._id;
+    const variant =
+      dish.variant ||
+      product?.variants?.find((v) => String(v._id) === String(variantId)) ||
+      product?.variants?.[0];
+    return { product, variant, productId };
+  };
+
+  // Quantity +/-: DEC never goes below 1, INC never exceeds variant stock.
+  const handleQtyChange = (id, delta, dish) => {
+    const quantity = cartItems[id] || 0;
+    const { variant } = resolveProductAndVariant(dish);
+    const stock = variant?.stockQuantity;
+
+    if (delta < 0 && quantity <= 1) return; // use the trash icon to remove
+    if (delta > 0 && Number.isFinite(stock) && quantity >= stock) {
+      setOrderError(`Only ${stock} in stock for ${dish.title}.`);
+      return;
+    }
+    setOrderError("");
+    updateQuantity(id, delta, dish);
+  };
+
+  const handleRemoveItem = (id) => {
+    if (window.confirm("Remove this item from cart?")) removeFromCart(id);
+  };
+
+  const handleClearCart = () => {
+    if (window.confirm("Remove all items from cart?")) clearCart();
+  };
+
+  const placeOrder = () => {
+    // Navigate directly to checkout page — address selection, table & payment modal are all on /checkout.
+    router.push("/checkout");
+  };
+
+  // Ask the server to validate eligibility and usage limits before applying.
   const handleApplyCoupon = (codeToApply) => {
     const code = (codeToApply || couponInput).trim().toUpperCase();
     setCouponError("");
     setCouponSuccess("");
 
+    if (couponState.validationLoading) return;
     if (!code) {
       setCouponError("Please enter a valid coupon code");
       return;
     }
 
-    const found = availableCoupons.find((c) => c.code === code);
-    if (!found) {
-      setCouponError(`Coupon code "${code}" is invalid.`);
+    if (subtotal <= 0) {
+      setCouponError("Add items to your cart before applying a coupon.");
       return;
     }
 
-    if (subtotal < found.minOrder) {
-      setCouponError(
-        `Minimum order of $${found.minOrder.toFixed(2)} required for code ${code}.`
-      );
-      return;
-    }
+    let userId = "";
+    try {
+      const cookieUserId = document.cookie.match(/(?:^|;\s*)userid=([^;]+)/)?.[1];
+      userId = localStorage.getItem("userid") || (cookieUserId ? decodeURIComponent(cookieUserId) : "");
+    } catch { }
 
-    setAppliedCoupon(found);
-    setCouponSuccess(`Coupon ${found.code} applied successfully!`);
-    setCouponInput("");
-    if (isCouponsModalOpen) {
-      setIsCouponsModalOpen(false);
-    }
-    setTimeout(() => setCouponSuccess(""), 4000);
+    setPendingCouponCode(code);
+    dispatch(validateCoupon({
+      code,
+      orderValue: Number(subtotal),
+      ...(userId ? { userId } : {}),
+    }));
   };
 
   const handleRemoveCoupon = () => {
@@ -193,6 +525,17 @@ export default function CartPage() {
   // ----------------------------------------------------
   // EMPTY CART STATE
   // ----------------------------------------------------
+  if (!cartLoaded) {
+    return (
+      <div className="min-h-screen bg-zinc-50/70 pt-36 pb-24 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-zinc-400">
+          <span className="w-9 h-9 rounded-full border-4 border-rose-200 border-t-rose-600 animate-spin" />
+          <span className="text-xs font-bold">Loading your cart…</span>
+        </div>
+      </div>
+    );
+  }
+
   if (cartEntries.length === 0) {
     return (
       <div className="min-h-screen bg-zinc-50/70 pt-36 pb-24 flex items-center justify-center">
@@ -219,13 +562,6 @@ export default function CartPage() {
               <span>Explore Full Menu</span>
             </Link>
 
-            <button
-              onClick={loadSampleCart}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-white border border-rose-200 text-rose-600 text-xs sm:text-sm font-bold shadow-xs hover:border-rose-400 hover:bg-rose-50/70 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-rose-500" />
-              <span>Fill Sample Order</span>
-            </button>
           </div>
 
           {/* Pure Veg Assurance */}
@@ -243,7 +579,7 @@ export default function CartPage() {
   // ----------------------------------------------------
   return (
     <div className="min-h-screen bg-zinc-50/70 pt-28 sm:pt-36 lg:pt-40 pb-28 sm:pb-32">
-      <div className="w-full max-w-[1700px] mx-auto px-3.5 sm:px-6 lg:px-8 xl:px-12 space-y-5 sm:space-y-7">
+      <div className="w-full max-w-[1400px] mx-auto px-3.5 sm:px-6 lg:px-8 xl:px-10 space-y-5 sm:space-y-6">
         {/* Breadcrumb & Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-zinc-200/80">
           <div>
@@ -268,15 +604,7 @@ export default function CartPage() {
 
           <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
             <button
-              onClick={loadSampleCart}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition-all cursor-pointer shadow-2xs"
-              title="Reset with sample dishes"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-              <span>Sample Order</span>
-            </button>
-            <button
-              onClick={clearCart}
+              onClick={handleClearCart}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 shrink-0" />
@@ -309,14 +637,14 @@ export default function CartPage() {
               type="button"
               onClick={() => setOrderMode("delivery")}
               className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer flex items-center sm:items-start gap-3 ${orderMode === "delivery"
-                  ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
-                  : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
+                ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
+                : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
                 }`}
             >
               <div
                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${orderMode === "delivery"
-                    ? "bg-white/20 text-white backdrop-blur-xs"
-                    : "bg-rose-100 text-rose-600"
+                  ? "bg-white/20 text-white backdrop-blur-xs"
+                  : "bg-rose-100 text-rose-600"
                   }`}
               >
                 <Bike className="w-5 h-5" />
@@ -340,8 +668,8 @@ export default function CartPage() {
                   {isFreeDelivery ? (
                     <span
                       className={`px-2 py-0.5 rounded-full ${orderMode === "delivery"
-                          ? "bg-white/25 text-white"
-                          : "bg-emerald-100 text-emerald-800"
+                        ? "bg-white/25 text-white"
+                        : "bg-emerald-100 text-emerald-800"
                         }`}
                     >
                       FREE DELIVERY
@@ -349,11 +677,11 @@ export default function CartPage() {
                   ) : (
                     <span
                       className={`px-2 py-0.5 rounded-full ${orderMode === "delivery"
-                          ? "bg-white/25 text-white"
-                          : "bg-zinc-200 text-zinc-700"
+                        ? "bg-white/25 text-white"
+                        : "bg-zinc-200 text-zinc-700"
                         }`}
                     >
-                      $2.99 Fee (Free &gt;$35)
+                      ₹{CART_RULES.deliveryFee} Fee (Free &gt;₹{CART_RULES.freeDeliveryThreshold})
                     </span>
                   )}
                 </div>
@@ -365,14 +693,14 @@ export default function CartPage() {
               type="button"
               onClick={() => setOrderMode("takeaway")}
               className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer flex items-center sm:items-start gap-3 ${orderMode === "takeaway"
-                  ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
-                  : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
+                ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
+                : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
                 }`}
             >
               <div
                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${orderMode === "takeaway"
-                    ? "bg-white/20 text-white backdrop-blur-xs"
-                    : "bg-amber-100 text-amber-700"
+                  ? "bg-white/20 text-white backdrop-blur-xs"
+                  : "bg-amber-100 text-amber-700"
                   }`}
               >
                 <Store className="w-5 h-5" />
@@ -395,11 +723,11 @@ export default function CartPage() {
                 <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold flex-wrap">
                   <span
                     className={`px-2 py-0.5 rounded-full ${orderMode === "takeaway"
-                        ? "bg-white/25 text-white"
-                        : "bg-emerald-100 text-emerald-800"
+                      ? "bg-white/25 text-white"
+                      : "bg-emerald-100 text-emerald-800"
                       }`}
                   >
-                    $0 DELIVERY FEE
+                    ₹0 DELIVERY FEE
                   </span>
                 </div>
               </div>
@@ -410,14 +738,14 @@ export default function CartPage() {
               type="button"
               onClick={() => setOrderMode("dinein")}
               className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer flex items-center sm:items-start gap-3 ${orderMode === "dinein"
-                  ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
-                  : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
+                ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
+                : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
                 }`}
             >
               <div
                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${orderMode === "dinein"
-                    ? "bg-white/20 text-white backdrop-blur-xs"
-                    : "bg-rose-100 text-rose-600"
+                  ? "bg-white/20 text-white backdrop-blur-xs"
+                  : "bg-rose-100 text-rose-600"
                   }`}
               >
                 <Utensils className="w-5 h-5" />
@@ -440,8 +768,8 @@ export default function CartPage() {
                 <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold flex-wrap">
                   <span
                     className={`px-2 py-0.5 rounded-full ${orderMode === "dinein"
-                        ? "bg-white/25 text-white"
-                        : "bg-purple-100 text-purple-800"
+                      ? "bg-white/25 text-white"
+                      : "bg-purple-100 text-purple-800"
                       }`}
                   >
                     {tableNumber || "Select Table"}
@@ -464,20 +792,20 @@ export default function CartPage() {
                   </span>
                 ) : (
                   <span>
-                    Add <span className="text-rose-600 font-black">${freeDeliveryShortfall.toFixed(2)}</span> more to unlock <span className="text-rose-600 font-bold">FREE Delivery</span>!
+                    Add <span className="text-rose-600 font-black">₹{freeDeliveryShortfall.toFixed(2)}</span> more to unlock <span className="text-rose-600 font-bold">FREE Delivery</span>!
                   </span>
                 )}
               </span>
               <span className="text-zinc-500 font-mono text-[11px] sm:text-xs shrink-0">
-                ${subtotal.toFixed(2)} / ${freeDeliveryThreshold.toFixed(2)}
+                ₹{subtotal.toFixed(2)} / ₹{freeDeliveryThreshold.toFixed(2)}
               </span>
             </div>
 
             <div className="w-full h-2 bg-zinc-200 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-500 rounded-full ${isFreeDelivery
-                    ? "bg-gradient-to-r from-emerald-500 to-teal-500"
-                    : "bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-500"
+                  : "bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500"
                   }`}
                 style={{
                   width: `${Math.min(100, (subtotal / freeDeliveryThreshold) * 100)}%`,
@@ -487,12 +815,15 @@ export default function CartPage() {
           </div>
         )}
 
-        {/* Main Cart Content Sections (Full Col-12 Width) */}
-        <div className="space-y-5 sm:space-y-7 w-full">
-          {/* ==========================================
-              1. DISH ITEMS SECTION (Full Col-12)
-          ========================================== */}
-          <div className="w-full bg-white rounded-3xl p-3.5 sm:p-6 lg:p-7 border border-zinc-200/80 shadow-xs space-y-3.5 sm:space-y-4">
+        {/* ── Two-Column Layout: Left (items + coupons) · Right (sticky bill) ── */}
+        <div className="flex flex-col lg:flex-row items-start gap-6 lg:gap-7 w-full">
+          {/* ═══════════════════════════════════════════════
+              LEFT COLUMN — Cart Items + Settings + Coupons
+          ═══════════════════════════════════════════════ */}
+          <div className="flex-1 min-w-0 space-y-5 sm:space-y-6">
+
+            {/* 1. DISH ITEMS */}
+            <div className="w-full bg-white rounded-3xl p-3.5 sm:p-6 border border-zinc-200/80 shadow-xs space-y-3.5 sm:space-y-4">
               <div className="flex items-center justify-between pb-2.5 sm:pb-3 border-b border-zinc-100">
                 <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-zinc-500">
                   Dish Details
@@ -505,14 +836,8 @@ export default function CartPage() {
               {/* Dish Items List (100% Full-Width Rich Cards) */}
               <div className="space-y-3 sm:space-y-3.5">
                 {cartEntries.map(([id, quantity]) => {
-                  const dish = fullMenuCatalog.find((d) => d.id === id) || {
-                    id,
-                    title: "Delicious Gourmet Dish",
-                    price: 12.99,
-                    image: "/img/category/paneer-tikka.jpg",
-                    subCategory: "Specialty",
-                    shortDesc: "Freshly prepared pure vegetarian delight with royal spices.",
-                  };
+                  const dish = dishById[id];
+                  if (!dish) return null;
                   const note = itemNotes[id] || "";
                   const itemTotal = dish.price * quantity;
 
@@ -564,11 +889,11 @@ export default function CartPage() {
                             {/* Unit Price */}
                             <div className="flex items-center gap-1.5 pt-0.5 font-bold">
                               <span className="text-rose-600 font-black text-sm">
-                                ${dish.price.toFixed(2)}
+                                ₹{dish.price.toFixed(2)}
                               </span>
                               {dish.oldPrice && (
                                 <span className="text-zinc-400 line-through text-[11px] font-normal">
-                                  ${dish.oldPrice.toFixed(2)}
+                                  ₹{dish.oldPrice.toFixed(2)}
                                 </span>
                               )}
                             </div>
@@ -588,7 +913,7 @@ export default function CartPage() {
                             <div className="-mt-3.5 z-10 flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-rose-500 text-white rounded-full px-2 py-1 shadow-md border-2 border-white">
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(id, -1, dish)}
+                                onClick={() => handleQtyChange(id, -1, dish)}
                                 className="w-4 h-4 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer active:scale-90"
                                 aria-label="Decrease quantity"
                               >
@@ -599,7 +924,7 @@ export default function CartPage() {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(id, 1, dish)}
+                                onClick={() => handleQtyChange(id, 1, dish)}
                                 className="w-4 h-4 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer active:scale-90"
                                 aria-label="Increase quantity"
                               >
@@ -630,13 +955,13 @@ export default function CartPage() {
                                 Total:
                               </span>
                               <span className="text-sm font-black text-zinc-900 font-mono">
-                                ${itemTotal.toFixed(2)}
+                                ₹{itemTotal.toFixed(2)}
                               </span>
                             </div>
 
                             <button
                               type="button"
-                              onClick={() => removeFromCart(id)}
+                              onClick={() => handleRemoveItem(id)}
                               className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                               title="Remove item"
                             >
@@ -705,14 +1030,14 @@ export default function CartPage() {
                             <div className="flex flex-wrap items-center gap-3 pt-0.5 text-xs">
                               <div className="flex items-center gap-1.5 font-bold">
                                 <span className="text-rose-600 font-black text-sm">
-                                  ${dish.price.toFixed(2)}
+                                  ₹{dish.price.toFixed(2)}
                                 </span>
                                 <span className="text-zinc-400 text-[11px] font-medium">
                                   each
                                 </span>
                                 {dish.oldPrice && (
                                   <span className="text-zinc-400 line-through text-xs font-normal">
-                                    ${dish.oldPrice.toFixed(2)}
+                                    ₹{dish.oldPrice.toFixed(2)}
                                   </span>
                                 )}
                               </div>
@@ -739,7 +1064,7 @@ export default function CartPage() {
                           <div className="flex items-center gap-2 bg-gradient-to-r from-rose-600 to-rose-500 text-white rounded-full px-2.5 py-1.5 shadow-xs">
                             <button
                               type="button"
-                              onClick={() => updateQuantity(id, -1, dish)}
+                              onClick={() => handleQtyChange(id, -1, dish)}
                               className="w-5 h-5 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
                               aria-label="Decrease quantity"
                             >
@@ -750,7 +1075,7 @@ export default function CartPage() {
                             </span>
                             <button
                               type="button"
-                              onClick={() => updateQuantity(id, 1, dish)}
+                              onClick={() => handleQtyChange(id, 1, dish)}
                               className="w-5 h-5 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
                               aria-label="Increase quantity"
                             >
@@ -761,17 +1086,17 @@ export default function CartPage() {
                           {/* Line Total */}
                           <div className="text-right min-w-[70px]">
                             <p className="text-base font-black text-zinc-900 font-mono">
-                              ${itemTotal.toFixed(2)}
+                              ₹{itemTotal.toFixed(2)}
                             </p>
                             <p className="text-[10px] text-zinc-400 font-medium">
-                              {quantity} × ${dish.price.toFixed(2)}
+                              {quantity} × ₹{dish.price.toFixed(2)}
                             </p>
                           </div>
 
                           {/* Remove Item Button */}
                           <button
                             type="button"
-                            onClick={() => removeFromCart(id)}
+                            onClick={() => handleRemoveItem(id)}
                             className="p-2 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 transition-all cursor-pointer"
                             title="Remove dish from cart"
                           >
@@ -855,69 +1180,108 @@ export default function CartPage() {
                 2. DYNAMIC FULFILLMENT SETTINGS (Delivery vs Takeaway vs Dine-In)
             ==================================================== */}
             {orderMode === "delivery" && (
-              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-zinc-200/80 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pb-1">
-                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-                    <Bike className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>Delivery Address &amp; Instructions</span>
-                  </h3>
-                  <Link
-                    href="/profile"
-                    className="text-xs font-bold text-rose-600 hover:underline"
-                  >
-                    Change Address
-                  </Link>
-                </div>
-
-                {/* Selected Address Preview */}
-                <div className="p-3 sm:p-3.5 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
-                    <MapPin className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-black text-zinc-900">
-                        {currentAddress?.tag || "Home"}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold">
-                        Delivery in 25-35 mins
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-600 truncate mt-0.5">
-                      {currentAddress?.addressLine || "Flat 4B, Emerald Heights, 42 Flavor Street, NY"}
+              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-zinc-200/80 shadow-xs space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-zinc-100">
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-900 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Delivery Address</span>
+                    </h3>
+                    <p className="text-[11px] text-zinc-400 mt-0.5 font-medium">
+                      Select or add a delivery location for doorstep delivery in 25–35 mins
                     </p>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddAddressModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200/80 transition-all cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-98"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add New Address</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Delivery Instructions Options */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-800 block">
-                    Rider Drop-off Instructions:
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
-                    {[
-                      { id: "leave-at-door", label: "Leave at door", icon: "🚪" },
-                      { id: "dont-ring-bell", label: "Don't ring bell", icon: "🔕" },
-                      { id: "call-on-arrival", label: "Call on arrival", icon: "📞" },
-                      { id: "hand-to-me", label: "Hand over to me", icon: "🤝" },
-                    ].map((inst) => {
-                      const isSelected = deliveryInstruction === inst.id;
-                      return (
-                        <button
-                          key={inst.id}
-                          type="button"
-                          onClick={() => setDeliveryInstruction(inst.id)}
-                          className={`p-2.5 sm:p-3 rounded-2xl border text-center sm:text-left text-xs font-semibold transition-all cursor-pointer flex flex-col items-center sm:items-start gap-1 ${isSelected
-                              ? "bg-rose-50 border-rose-500 text-rose-900 shadow-xs"
-                              : "bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100"
-                            }`}
-                        >
-                          <span className="text-lg">{inst.icon}</span>
-                          <span className="text-[11px] font-bold">{inst.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                {/* Saved Addresses Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {savedAddresses.map((addr) => {
+                    const isSelected = (selectedAddressId || savedAddresses[0]?.id) === addr.id;
+                    return (
+                      <div
+                        key={addr.id}
+                        onClick={() => setSelectedAddressId(addr.id)}
+                        className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer relative flex flex-col justify-between gap-2.5 ${isSelected
+                          ? "bg-rose-50/50 border-rose-500 ring-2 ring-rose-500/20 shadow-xs"
+                          : "bg-zinc-50/70 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-100/50"
+                          }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${isSelected ? "bg-rose-600 text-white shadow-2xs" : "bg-zinc-200 text-zinc-600"
+                                }`}
+                            >
+                              {addr.tag === "Home" ? (
+                                <Home className="w-3.5 h-3.5" />
+                              ) : addr.tag === "Office" || addr.tag === "Work" ? (
+                                <Building className="w-3.5 h-3.5" />
+                              ) : (
+                                <MapPin className="w-3.5 h-3.5" />
+                              )}
+                            </div>
+                            <span className="text-xs font-black text-zinc-900 tracking-tight">
+                              {addr.tag}
+                            </span>
+                            {addr.isDefault && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-200 text-zinc-700 font-bold">
+                                Default
+                              </span>
+                            )}
+                          </div>
+
+                          {isSelected ? (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center gap-1 shadow-2xs">
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              <span>Deliver Here</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-zinc-400">
+                              Select
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-zinc-600 space-y-0.5">
+                          <p className="font-bold text-zinc-900">
+                            {addr.recipientName || "Guest"}
+                            {addr.phone && (
+                              <span className="ml-1.5 text-[11px] font-medium text-zinc-400">
+                                • {addr.phone}
+                              </span>
+                            )}
+                          </p>
+                          <p className="line-clamp-2 leading-relaxed text-zinc-700 font-medium">
+                            {addr.addressLine}
+                          </p>
+                          {addr.landmark && (
+                            <p className="text-[11px] text-zinc-400 truncate">
+                              Landmark: {addr.landmark}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-[10px] font-bold">
+                          <span className="text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <span>⚡ 25-35 mins</span>
+                          </span>
+                          <span className="text-zinc-400">
+                            {addr.city}, {addr.zipCode}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Cutlery Opt-out Toggle */}
@@ -951,12 +1315,12 @@ export default function CartPage() {
                       <span>Support your Rider with a Tip:</span>
                     </label>
                     <span className="text-xs text-rose-600 font-bold">
-                      {deliveryTip > 0 ? `+$${deliveryTip.toFixed(2)}` : "No tip"}
+                      {deliveryTip > 0 ? `+₹${deliveryTip.toFixed(2)}` : "No tip"}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                    {[0, 1, 2, 3, 5].map((amount) => {
+                    {[0, 10, 20, 30, 50].map((amount) => {
                       const isSelected = deliveryTip === amount && !customTipActive;
                       return (
                         <button
@@ -967,11 +1331,11 @@ export default function CartPage() {
                             setCustomTipActive(false);
                           }}
                           className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isSelected
-                              ? "bg-rose-600 text-white shadow-xs"
-                              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                            ? "bg-rose-600 text-white shadow-xs"
+                            : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
                             }`}
                         >
-                          {amount === 0 ? "Not now" : `$${amount}`}
+                          {amount === 0 ? "Not now" : `₹${amount}`}
                         </button>
                       );
                     })}
@@ -980,8 +1344,8 @@ export default function CartPage() {
                       type="button"
                       onClick={() => setCustomTipActive(!customTipActive)}
                       className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${customTipActive
-                          ? "bg-rose-600 text-white"
-                          : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                        ? "bg-rose-600 text-white"
+                        : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
                         }`}
                     >
                       Custom
@@ -995,7 +1359,7 @@ export default function CartPage() {
                     >
                       <div className="relative flex-1 min-w-0">
                         <span className="absolute left-3 top-2 text-xs font-bold text-zinc-400">
-                          $
+                          ₹
                         </span>
                         <input
                           type="number"
@@ -1029,7 +1393,7 @@ export default function CartPage() {
                     <span>Restaurant Pickup Details</span>
                   </h3>
                   <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-black self-start sm:self-auto">
-                    $0 EXTRA FEES
+                    ₹0 EXTRA FEES
                   </span>
                 </div>
 
@@ -1084,8 +1448,8 @@ export default function CartPage() {
                           type="button"
                           onClick={() => setPickupTime(slot.id)}
                           className={`p-3 rounded-2xl border text-left text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${isSelected
-                              ? "bg-amber-50 border-amber-500 text-amber-950 shadow-xs"
-                              : "bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100"
+                            ? "bg-amber-50 border-amber-500 text-amber-950 shadow-xs"
+                            : "bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100"
                             }`}
                         >
                           <span>{slot.label}</span>
@@ -1137,8 +1501,8 @@ export default function CartPage() {
                             type="button"
                             onClick={() => setTableNumber(tbl)}
                             className={`py-2 px-2 rounded-xl text-xs font-black transition-all cursor-pointer text-center ${isSelected
-                                ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-xs scale-102"
-                                : "bg-white border border-rose-200 text-zinc-700 hover:bg-rose-100"
+                              ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-xs scale-102"
+                              : "bg-white border border-rose-200 text-zinc-700 hover:bg-rose-100"
                               }`}
                           >
                             {tbl}
@@ -1213,328 +1577,403 @@ export default function CartPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
-                {frequentlyAdded.map((dish) => {
-                  const qty = cartItems[dish.id] || 0;
+                {recommended.map((dish) => {
                   return (
-                    <div
+                    <Menucard
                       key={dish.id}
-                      className="p-3 rounded-2xl bg-zinc-50/80 border border-zinc-200/70 flex items-center justify-between gap-2.5 hover:border-rose-200 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <img
-                          src={dish.image}
-                          alt={dish.title}
-                          className="w-12 h-12 rounded-xl object-cover shrink-0 border border-zinc-200"
-                        />
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-zinc-900 truncate">
-                            {dish.title}
-                          </p>
-                          <p className="text-xs text-rose-600 font-extrabold">
-                            ${dish.price.toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {qty === 0 ? (
-                        <button
-                          onClick={() => addToCart(dish, 1)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white hover:bg-rose-600 hover:text-white text-zinc-800 border border-zinc-200 hover:border-rose-600 text-xs font-bold shadow-2xs transition-all shrink-0 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Add</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-1.5 bg-rose-600 text-white rounded-full px-2 py-0.5 shadow-xs shrink-0">
-                          <button
-                            onClick={() => updateQuantity(dish.id, -1, dish)}
-                            className="w-4 h-4 rounded-full hover:bg-rose-700 flex items-center justify-center cursor-pointer"
-                          >
-                            <Minus className="w-2.5 h-2.5" />
-                          </button>
-                          <span className="text-xs font-bold min-w-[12px] text-center font-mono">
-                            {qty}
-                          </span>
-                          <button
-                            onClick={() => updateQuantity(dish.id, 1, dish)}
-                            className="w-4 h-4 rounded-full hover:bg-rose-700 flex items-center justify-center cursor-pointer"
-                          >
-                            <Plus className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      dish={dish}
+                      viewMode="grid"
+                      inCart={isInCart(dish)}
+                      qty={getQty(dish)}
+                      getQtyForDish={getQty}
+                      inWishlist={isInWishlist(dish)}
+                      onAddToCart={addToCart}
+                      onUpdateQty={updateQty}
+                      onToggleWishlist={addToWishlist}
+                    />
                   );
                 })}
               </div>
             </div>
 
-            {/* ==========================================
-                4. PAYMENT, OFFERS & BILL SUMMARY
-            ========================================== */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start w-full">
-              {/* Left Sub-column: Coupons & SuperCoins */}
-              <div className="col-span-12 lg:col-span-7 xl:col-span-7 space-y-5 sm:space-y-6 w-full">
-                {/* 3. Promo Coupons & Offers Section */}
-                <div className="bg-white rounded-3xl p-4 sm:p-6 border border-zinc-200/80 shadow-xs space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                    <span>Coupons &amp; Offers</span>
-                  </span>
+            {/* end left column */}
+          </div>
 
-                  {/* View All Coupons Button */}
+          {/* ═══════════════════════════════════════════════
+              RIGHT COLUMN — Sticky Sidebar: Destination + Coupons + Bill Summary
+          ═══════════════════════════════════════════════ */}
+          <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 lg:sticky lg:top-36 space-y-4">
+            {/* 1. Quick Delivery Destination / Fulfillment Snapshot */}
+            <div className="bg-white rounded-3xl p-3.5 sm:p-4 border border-zinc-200/80 shadow-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  {orderMode === "delivery" && <Bike className="w-4 h-4" />}
+                  {orderMode === "takeaway" && <Store className="w-4 h-4" />}
+                  {orderMode === "dinein" && <Utensils className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-zinc-900 truncate">
+                      {orderMode === "delivery" && `Deliver to: ${currentAddress?.tag || "Home"}`}
+                      {orderMode === "takeaway" && "Pickup at Tastora Kitchen"}
+                      {orderMode === "dinein" && `Dine-In: ${tableNumber || "Table 07"}`}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 truncate mt-0.5">
+                    {orderMode === "delivery" && (currentAddress?.addressLine || "Select address")}
+                    {orderMode === "takeaway" && (pickupTime || "Ready in 20 mins")}
+                    {orderMode === "dinein" && "Direct Table Dining"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (orderMode === "delivery") {
+                    setShowAddAddressModal(true);
+                  } else {
+                    window.scrollTo({ top: 300, behavior: "smooth" });
+                  }
+                }}
+                className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer shrink-0"
+              >
+                Change
+              </button>
+            </div>
+
+            {/* 2. COUPONS & OFFERS CARD (Shifted to Right Side!) */}
+            <div className="bg-white rounded-3xl p-4 sm:p-5 border border-zinc-200/80 shadow-xs space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span>Coupons &amp; Offers</span>
+                </span>
+
+                {/* View All Coupons Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsCouponsModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded-xl transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3 text-rose-500" />
+                  <span>View All ({(availableCoupons || []).length})</span>
+                </button>
+              </div>
+
+              {appliedCoupon ? (
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-900 flex items-center justify-between gap-2 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-black tracking-wide text-emerald-950">
+                          {appliedCoupon.code}
+                        </p>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900 font-extrabold">
+                          APPLIED
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-700 truncate font-semibold">
+                        Saved ₹{discountAmount.toFixed(2)} with code
+                      </p>
+                    </div>
+                  </div>
+
                   <button
-                    type="button"
-                    onClick={() => setIsCouponsModalOpen(true)}
-                    className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-xl transition-colors cursor-pointer"
+                    onClick={handleRemoveCoupon}
+                    className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline shrink-0 cursor-pointer"
                   >
-                    <Sparkles className="w-3 h-3 text-rose-500" />
-                    <span>View All ({(availableCoupons || []).length})</span>
+                    Remove
                   </button>
                 </div>
-
-                {appliedCoupon ? (
-                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-900 flex items-center justify-between gap-2 animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <Check className="w-4 h-4 stroke-[3]" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-black tracking-wide text-emerald-950">
-                            {appliedCoupon.code}
-                          </p>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900 font-extrabold">
-                            APPLIED
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-emerald-700 truncate font-semibold mt-0.5">
-                          You saved ${discountAmount.toFixed(2)} with this coupon!
-                        </p>
-                      </div>
-                    </div>
-
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                      placeholder="ENTER COUPON CODE"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold text-zinc-900 uppercase tracking-wider placeholder:normal-case placeholder:font-medium placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                    />
                     <button
-                      onClick={handleRemoveCoupon}
-                      className="text-xs font-bold text-red-600 hover:underline shrink-0 cursor-pointer"
+                      onClick={() => handleApplyCoupon()}
+                      disabled={couponState.validationLoading}
+                      className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-rose-600 text-white text-xs font-bold transition-all shrink-0 cursor-pointer text-center disabled:opacity-60 disabled:cursor-wait"
                     >
-                      Remove
+                      {couponState.validationLoading ? "Checking..." : "Apply"}
                     </button>
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <input
-                        type="text"
-                        value={couponInput}
-                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                        placeholder="ENTER COUPON CODE"
-                        className="w-full px-3.5 py-2.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs font-bold text-zinc-900 uppercase tracking-wider placeholder:normal-case placeholder:font-medium placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-                      />
-                      <button
-                        onClick={() => handleApplyCoupon()}
-                        className="px-5 py-2.5 rounded-2xl bg-zinc-900 hover:bg-rose-600 text-white text-xs font-bold transition-all shrink-0 cursor-pointer text-center"
-                      >
-                        Apply
-                      </button>
-                    </div>
 
-                    {couponError && (
-                      <p className="text-xs font-semibold text-red-600">{couponError}</p>
-                    )}
-                    {couponSuccess && (
-                      <p className="text-xs font-semibold text-emerald-600">{couponSuccess}</p>
-                    )}
+                  {couponError && (
+                    <p className="text-[11px] font-semibold text-red-600">{couponError}</p>
+                  )}
+                  {couponSuccess && (
+                    <p className="text-[11px] font-semibold text-emerald-600">{couponSuccess}</p>
+                  )}
 
-                    {/* Quick Popular Coupon Chips */}
-                    <div className="pt-2 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-zinc-400">
-                          Top offers for your order:
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setIsCouponsModalOpen(true)}
-                          className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
-                        >
-                          See all &rarr;
-                        </button>
-                      </div>
-
-                      <div className="space-y-2">
-                        {(availableCoupons || []).slice(0, 3).map((coupon) => {
-                          const isEligible = subtotal >= coupon.minOrder;
-                          return (
-                            <div
-                              key={coupon.code}
-                              className="p-2.5 sm:p-3 rounded-2xl bg-zinc-50/90 border border-dashed border-zinc-200 flex items-center justify-between gap-2 hover:border-rose-300 transition-colors"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-xs font-black text-rose-600 tracking-wider">
-                                    {coupon.code}
-                                  </span>
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 font-bold">
-                                    {coupon.tag}
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-zinc-500 truncate mt-0.5">
-                                  {coupon.description}
-                                </p>
+                  {/* Quick Popular Coupon Chips */}
+                  <div className="pt-1 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                      Quick Apply:
+                    </span>
+                    <div className="space-y-1.5">
+                      {(availableCoupons || []).slice(0, 2).map((coupon) => {
+                        const isEligible = subtotal >= coupon.minOrder;
+                        return (
+                          <div
+                            key={coupon.code}
+                            className="p-2 rounded-xl bg-zinc-50/90 border border-dashed border-zinc-200 flex items-center justify-between gap-2 hover:border-rose-300 transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black text-rose-600 tracking-wider">
+                                  {coupon.code}
+                                </span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 font-bold">
+                                  {coupon.tag}
+                                </span>
                               </div>
-                              <button
-                                onClick={() => handleApplyCoupon(coupon.code)}
-                                disabled={!isEligible}
-                                className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all shrink-0 cursor-pointer ${isEligible
-                                    ? "bg-rose-600 hover:bg-rose-700 text-white shadow-xs"
-                                    : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
-                                  }`}
-                              >
-                                {isEligible ? "Apply" : `Min $${coupon.minOrder}`}
-                              </button>
+                              <p className="text-[10px] text-zinc-500 truncate mt-0.5">
+                                {coupon.description}
+                              </p>
                             </div>
-                          );
-                        })}
-                      </div>
+                            <button
+                              onClick={() => handleApplyCoupon(coupon.code)}
+                              disabled={!isEligible || couponState.validationLoading}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all shrink-0 cursor-pointer ${isEligible
+                                ? "bg-rose-600 hover:bg-rose-700 text-white shadow-2xs"
+                                : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+                                }`}
+                            >
+                              {couponState.validationLoading ? "Checking..." : isEligible ? "Apply" : `Min ₹${coupon.minOrder}`}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* CreditCoins rewards redemption (inside right sidebar) */}
+              {creditCoinsBalance > 0 && (
+                <div className="pt-2 border-t border-zinc-100">
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/60 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={useCreditCoins}
+                      onChange={(e) => setUseCreditCoins(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded text-amber-500 focus:ring-amber-400 border-zinc-300 accent-amber-500 cursor-pointer"
+                    />
+                    <div className="text-xs leading-snug min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-amber-900">
+                          Redeem CreditCoins (50 = ₹1)
+                        </p>
+                        <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                          {creditCoinsBalance} coins
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-amber-800/80 mt-0.5">
+                        Your {creditCoinsBalance} coins = ₹{(creditCoinsBalance / 50).toFixed(2)} off your order.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Bill Summary Card */}
+            <div className="bg-white rounded-3xl border border-zinc-200/80 shadow-sm overflow-hidden">
+              {/* Gradient Header */}
+              <div className="px-5 py-4 bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-rose-400" />
+                  <h3 className="text-sm font-black text-white tracking-tight">Order Summary</h3>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 capitalize">
+                  {orderMode === "delivery" ? "🛵 Delivery" : orderMode === "takeaway" ? "🥡 Takeaway" : "🍽️ Dine-In"}
+                </span>
+              </div>
+
+              {/* VIP Membership Banner in Cart */}
+              <div className="px-5 pt-3">
+                {isMember ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-400/15 to-rose-500/10 border border-amber-300/50 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">👑</span>
+                      <div>
+                        <p className="font-black text-amber-950">VIP Privileges Active</p>
+                        <p className="text-[11px] text-amber-900">100% Free Delivery &amp; 2x CreditCoins applied</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-400 text-zinc-950 font-black text-[10px]">
+                      VIP ACTIVE
+                    </span>
+                  </div>
+                ) : (
+                  <Link
+                    href="/membership"
+                    className="flex items-center justify-between p-2.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200/80 transition-all text-xs group"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-base shrink-0">👑</span>
+                      <div className="min-w-0">
+                        <p className="font-black text-zinc-900 truncate">Join Tastora VIP Club</p>
+                        <p className="text-[11px] text-zinc-600 truncate">Get Free Delivery on every order &amp; 10% OFF</p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-[10px] shadow-2xs group-hover:scale-105 transition-transform">
+                      Unlock VIP
+                    </span>
+                  </Link>
                 )}
               </div>
 
-              {/* SuperCoins Rewards Redemption */}
-              <div className="bg-white rounded-3xl p-4 sm:p-5 border border-zinc-200/80 shadow-xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-                    <Coins className="w-3.5 h-3.5 text-amber-500" />
-                    <span>SuperCoins Balance</span>
-                  </span>
-                  <span className="text-xs font-black text-amber-600">
-                    {superCoinsBalance} Coins
-                  </span>
-                </div>
-
-                <label className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50/70 border border-amber-200/60 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={useSuperCoins}
-                    onChange={(e) => setUseSuperCoins(e.target.checked)}
-                    className="w-4 h-4 mt-0.5 rounded text-amber-500 focus:ring-amber-400 border-zinc-300 accent-amber-500 cursor-pointer"
-                  />
-                  <div className="text-xs leading-snug">
-                    <p className="font-bold text-amber-900">
-                      Redeem 250 SuperCoins
-                    </p>
-                    <p className="text-[11px] text-amber-800/80 mt-0.5">
-                      Save $2.50 instantly from your rewards balance.
-                    </p>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {/* Right Sub-column: Detailed Bill Summary & Checkout */}
-            <div className="col-span-12 lg:col-span-5 xl:col-span-5 space-y-6 w-full lg:sticky lg:top-36">
-              {/* Detailed Bill Summary */}
-              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-zinc-200/80 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-500">
-                    Bill Summary
-                  </h3>
-                  <span className="text-xs font-bold text-zinc-400 capitalize">
-                    Mode: {orderMode}
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs sm:text-sm font-medium text-zinc-600">
-                  <div className="flex justify-between">
-                    <span>Item Subtotal ({totalCartCount} items)</span>
-                    <span className="font-mono text-zinc-900 font-bold">${subtotal.toFixed(2)}</span>
+              <div className="p-5 space-y-4">
+                <div className="space-y-3 text-xs sm:text-sm">
+                  <div className="flex justify-between items-center py-2 border-b border-zinc-100">
+                    <span className="text-zinc-600 font-medium">Subtotal
+                      <span className="ml-1 text-zinc-400 font-normal">({totalCartCount} item{totalCartCount !== 1 ? 's' : ''})</span>
+                    </span>
+                    <span className="font-mono text-zinc-900 font-bold">₹{subtotal.toFixed(2)}</span>
                   </div>
 
                   {appliedCoupon && (
-                    <div className="flex justify-between text-emerald-600 font-semibold">
-                      <span className="flex items-center gap-1">
-                        <Tag className="w-3 h-3" />
-                        Promo Discount ({appliedCoupon.code})
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 text-emerald-600">
+                      <span className="flex items-center gap-1.5 font-semibold">
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center">
+                          <Tag className="w-2.5 h-2.5" />
+                        </span>
+                        Promo ({appliedCoupon.code})
                       </span>
-                      <span className="font-mono font-bold">-${discountAmount.toFixed(2)}</span>
+                      <span className="font-mono font-bold">-₹{discountAmount.toFixed(2)}</span>
                     </div>
                   )}
 
-                  {useSuperCoins && (
-                    <div className="flex justify-between text-amber-600 font-semibold">
-                      <span className="flex items-center gap-1">
-                        <Coins className="w-3 h-3" />
-                        SuperCoins Redemption
+                  {isMember && memberDiscountAmount > 0 && (
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 text-amber-700">
+                      <span className="flex items-center gap-1.5 font-semibold">
+                        <span className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
+                          <Crown className="w-2.5 h-2.5 text-amber-600" />
+                        </span>
+                        VIP Member Discount ({memberDiscountPercent}%)
                       </span>
-                      <span className="font-mono font-bold">-${superCoinsDiscount.toFixed(2)}</span>
+                      <span className="font-mono font-bold">-₹{memberDiscountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  {useCreditCoins && creditCoinsDiscount > 0 && (
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 text-amber-600">
+                      <span className="flex items-center gap-1.5 font-semibold">
+                        <span className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center">
+                          <Coins className="w-2.5 h-2.5" />
+                        </span>
+                        CreditCoins ({coinsConsumed} used)
+                      </span>
+                      <span className="font-mono font-bold">-₹{creditCoinsDiscount.toFixed(2)}</span>
                     </div>
                   )}
 
                   {/* Delivery Fee Line */}
-                  <div className="flex justify-between">
-                    <span>
+                  <div className="flex justify-between items-center py-2 border-b border-zinc-100">
+                    <span className="text-zinc-600 font-medium">
                       {orderMode === "delivery"
                         ? "Delivery Fee"
                         : orderMode === "takeaway"
-                          ? "Takeaway Packaging Fee"
-                          : "Dine-In Service Charge"}
+                          ? "Packaging Fee"
+                          : "Service Charge"}
                     </span>
                     {deliveryFee === 0 ? (
-                      <span className="text-emerald-600 font-bold font-mono">FREE ($0.00)</span>
+                      <span className="text-emerald-600 font-bold font-mono flex items-center gap-1">
+                        {isMember && <Crown className="w-3.5 h-3.5 text-amber-500" />}
+                        FREE (₹0.00)
+                      </span>
                     ) : (
-                      <span className="font-mono text-zinc-900 font-bold">${deliveryFee.toFixed(2)}</span>
+                      <span className="font-mono text-zinc-900 font-bold">₹{deliveryFee.toFixed(2)}</span>
                     )}
                   </div>
 
-                  <div className="flex justify-between">
-                    <span className="flex items-center gap-1">
-                      <span>Taxes &amp; Restaurant GST (8.5%)</span>
-                    </span>
-                    <span className="font-mono text-zinc-900 font-bold">${taxAmount.toFixed(2)}</span>
+                  <div className="flex justify-between items-center py-2 border-b border-zinc-100">
+                    <span className="text-zinc-600 font-medium">Taxes &amp; GST (8.5%)</span>
+                    <span className="font-mono text-zinc-900 font-bold">₹{taxAmount.toFixed(2)}</span>
                   </div>
 
                   {orderMode === "delivery" && deliveryTip > 0 && (
-                    <div className="flex justify-between text-rose-600 font-semibold">
-                      <span>Rider Delivery Tip</span>
-                      <span className="font-mono font-bold">+${deliveryTip.toFixed(2)}</span>
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-100 text-rose-600 font-semibold">
+                      <span className="flex items-center gap-1.5">
+                        <Heart className="w-3 h-3 fill-rose-500" />
+                        Rider Tip
+                      </span>
+                      <span className="font-mono font-bold">+₹{deliveryTip.toFixed(2)}</span>
                     </div>
                   )}
 
-                  <div className="pt-3 border-t border-zinc-200/80 flex justify-between items-baseline">
+                  {/* Grand Total */}
+                  <div className="mt-2 p-4 rounded-2xl bg-gradient-to-br from-zinc-900 to-zinc-800 text-white flex items-center justify-between">
                     <div>
-                      <span className="text-sm sm:text-base font-black text-zinc-900 block">
-                        To Pay
-                      </span>
-                      <span className="text-[10px] text-zinc-400">
-                        Inclusive of all taxes &amp; charges
-                      </span>
+                      <span className="text-sm font-black block">To Pay</span>
+                      <span className="text-[10px] text-zinc-400">Taxes &amp; charges included</span>
                     </div>
-                    <span className="text-xl sm:text-2xl font-black text-rose-600 font-mono">
-                      ${grandTotal.toFixed(2)}
+                    <span className="text-2xl sm:text-3xl font-black text-rose-400 font-mono">
+                      ₹{grandTotal.toFixed(2)}
                     </span>
                   </div>
                 </div>
+                {/* Earn preview banner */}
+                {creditCoinsToEarn > 0 && (
+                  <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200/70 text-[11px] text-amber-800 font-semibold">
+                    <span>🪙</span>
+                    <span>You'll earn <span className="font-black text-amber-900">{creditCoinsToEarn} CreditCoins</span> after this order!</span>
+                  </div>
+                )}
 
-                {/* Proceed to Checkout CTA Button */}
-                <Link
-                  href="/checkout"
-                  className="w-full py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-xs sm:text-sm shadow-xl shadow-rose-500/25 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <span>Proceed to Checkout</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
+                {/* Checkout CTA */}
+                <div className="space-y-3 pt-2">
 
-                {/* Pure Veg Guarantee */}
-                <div className="pt-2 text-center">
-                  <p className="text-[11px] font-semibold text-emerald-700 flex items-center justify-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>100% Pure Vegetarian Fresh Guaranteed</span>
-                  </p>
+                  {orderError && (
+                    <p className="text-[11px] font-semibold text-red-600 text-center">{orderError}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={placeOrder}
+                    disabled={placing}
+                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-sm shadow-xl shadow-rose-500/30 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>{placing ? "Placing order..." : "Proceed to Checkout"}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  {/* Trust Badges */}
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    {[
+                      { icon: "🔒", label: "100% Secure" },
+                      { icon: "🌿", label: "Pure Veg" },
+                      { icon: "⚡", label: "Fast Delivery" },
+                    ].map((badge) => (
+                      <div key={badge.label} className="flex flex-col items-center gap-1 p-2 rounded-xl bg-zinc-50 border border-zinc-100">
+                        <span className="text-base">{badge.icon}</span>
+                        <span className="text-[9px] font-bold text-zinc-500 text-center leading-tight">{badge.label}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Pure Veg Guarantee */}
+                  <div className="text-center">
+                    <p className="text-[11px] font-semibold text-emerald-700 flex items-center justify-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>100% Pure Vegetarian Fresh Guaranteed</span>
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
+            {/* end right column */}
           </div>
         </div>
 
@@ -1549,25 +1988,241 @@ export default function CartPage() {
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-lg sm:text-xl font-black text-rose-600 font-mono">
-                  ${grandTotal.toFixed(2)}
+                  ₹{grandTotal.toFixed(2)}
                 </span>
                 {appliedCoupon && (
                   <span className="text-[9px] sm:text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">
-                    Saved ${discountAmount.toFixed(2)}
+                    Saved ₹{discountAmount.toFixed(2)}
                   </span>
                 )}
               </div>
             </div>
 
-            <Link
-              href="/checkout"
-              className="px-5 sm:px-7 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-rose-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            <button
+              type="button"
+              onClick={placeOrder}
+              disabled={placing}
+              className="px-5 sm:px-7 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-rose-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60"
             >
-              <span>Checkout</span>
+              <span>{placing ? "Placing..." : "Checkout"}</span>
               <ArrowRight className="w-4 h-4" />
-            </Link>
+            </button>
           </div>
         </div>
+
+        {/* ====================================================
+            ADD DELIVERY ADDRESS MODAL
+        ==================================================== */}
+        {showAddAddressModal && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 border border-zinc-200">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black tracking-tight">Add Delivery Address</h3>
+                    <p className="text-[11px] sm:text-xs text-rose-100">Save address for quick doorstep delivery</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddAddressModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <form onSubmit={handleSaveNewAddress} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+                {/* Address Type / Tag */}
+                <div>
+                  <label className="text-xs font-bold text-zinc-700 block mb-1.5">Save Address As:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "Home", icon: Home },
+                      { id: "Office", icon: Building },
+                      { id: "Other", icon: MapPin },
+                    ].map((t) => {
+                      const Icon = t.icon;
+                      const isSel = newAddress.tag === t.id;
+                      return (
+                        <button
+                          type="button"
+                          key={t.id}
+                          onClick={() => setNewAddress({ ...newAddress, tag: t.id })}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${isSel
+                            ? "bg-rose-50 border-rose-500 text-rose-700 shadow-2xs"
+                            : "bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100"
+                            }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{t.id}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Contact details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Recipient Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newAddress.recipientName}
+                      onChange={(e) => setNewAddress({ ...newAddress, recipientName: e.target.value })}
+                      placeholder="e.g. Ishaan Sharma"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Phone Number *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={newAddress.phone}
+                      onChange={(e) => setNewAddress({ ...newAddress, phone: e.target.value })}
+                      placeholder="+1 (555) 000-0000"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="address-location-search" className="text-xs font-bold text-zinc-700 block">
+                    Find your location
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="address-location-search"
+                      type="search"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={locationSuggestions.length > 0}
+                      value={locationQuery}
+                      onChange={handleQueryChange}
+                      placeholder="Search street, building, or area"
+                      className="min-w-0 flex-1 px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      disabled={locationLoading}
+                      className="shrink-0 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 disabled:opacity-60"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Navigation className="h-3.5 w-3.5" />
+                        {locationLoading ? "Locating…" : "Use my location"}
+                      </span>
+                    </button>
+                  </div>
+                  {locationSuggestions.length > 0 && (
+                    <ul role="listbox" className="max-h-48 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg">
+                      {locationSuggestions.map((feature, index) => (
+                        <li key={`${feature.properties?.place_id || feature.properties?.formatted}-${index}`}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected="false"
+                            onClick={() => applyLocationFeature(feature)}
+                            className="w-full px-3 py-2.5 text-left text-xs text-zinc-800 hover:bg-rose-50"
+                          >
+                            <span className="block font-bold">{feature.properties?.address_line1 || feature.properties?.name || feature.properties?.formatted}</span>
+                            {feature.properties?.address_line2 && (
+                              <span className="mt-0.5 block text-[11px] text-zinc-500">{feature.properties.address_line2}</span>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {locationLoading && locationQuery.length >= 3 && (
+                    <p className="text-[11px] text-zinc-500">Searching addresses…</p>
+                  )}
+                  {locationError && <p role="status" className="text-[11px] text-rose-600">{locationError}</p>}
+                </div>
+
+                {/* Complete Street Address */}
+                <div>
+                  <label className="text-xs font-bold text-zinc-700 block mb-1">Complete Address / Street *</label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={newAddress.addressLine}
+                    onChange={(e) => setNewAddress({ ...newAddress, addressLine: e.target.value })}
+                    placeholder="Flat / Floor / Building name, Street name"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none resize-none"
+                  />
+                </div>
+
+                {/* Landmark */}
+                <div>
+                  <label className="text-xs font-bold text-zinc-700 block mb-1">Nearby Landmark (Optional)</label>
+                  <input
+                    type="text"
+                    value={newAddress.landmark}
+                    onChange={(e) => setNewAddress({ ...newAddress, landmark: e.target.value })}
+                    placeholder="e.g. Near Central Park / Metro station"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                  />
+                </div>
+
+                {/* City and Zip */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">City</label>
+                    <input
+                      type="text"
+                      value={newAddress.city}
+                      onChange={(e) => setNewAddress({ ...newAddress, city: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">State / Region</label>
+                    <input
+                      type="text"
+                      value={newAddress.state}
+                      onChange={(e) => setNewAddress({ ...newAddress, state: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-700 block mb-1">Zip Code</label>
+                    <input
+                      type="text"
+                      value={newAddress.zipCode}
+                      onChange={(e) => setNewAddress({ ...newAddress, zipCode: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(false)}
+                    className="px-4 py-2 rounded-xl border border-zinc-200 text-zinc-600 hover:bg-zinc-100 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-rose-500/20 transition-all cursor-pointer"
+                  >
+                    Save &amp; Deliver Here
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* ====================================================
           4. ALL COUPONS & OFFERS MODAL
@@ -1605,14 +2260,14 @@ export default function CartPage() {
                   { id: "all", label: "All Coupons" },
                   { id: "eligible", label: "Eligible for Cart" },
                   { id: "percentage", label: "% Discounts" },
-                  { id: "flat", label: "Flat $ OFF" },
+                  { id: "flat", label: "Flat ₹ OFF" },
                 ].map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setCouponFilter(tab.id)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${couponFilter === tab.id
-                        ? "bg-zinc-900 text-white shadow-xs"
-                        : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                      ? "bg-zinc-900 text-white shadow-xs"
+                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
                       }`}
                   >
                     {tab.label}
@@ -1622,7 +2277,11 @@ export default function CartPage() {
 
               {/* Modal Coupons List */}
               <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
-                {filteredCoupons.map((coupon) => {
+                {couponState.couponsLoading ? (
+                  <p className="py-8 text-center text-sm font-medium text-zinc-500">Loading coupons...</p>
+                ) : filteredCoupons.length === 0 ? (
+                  <p className="py-8 text-center text-sm font-medium text-zinc-500">No active coupons available.</p>
+                ) : filteredCoupons.map((coupon) => {
                   const isCurrentlyApplied = appliedCoupon?.code === coupon.code;
                   const isEligible = subtotal >= coupon.minOrder;
                   const shortfall = Math.max(0, coupon.minOrder - subtotal);
@@ -1632,10 +2291,10 @@ export default function CartPage() {
                     <div
                       key={coupon.code}
                       className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3 relative overflow-hidden ${isCurrentlyApplied
-                          ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20"
-                          : isEligible
-                            ? "bg-white border-zinc-200 hover:border-rose-300 hover:shadow-md"
-                            : "bg-zinc-50/80 border-zinc-200/80 opacity-85"
+                        ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20"
+                        : isEligible
+                          ? "bg-white border-zinc-200 hover:border-rose-300 hover:shadow-md"
+                          : "bg-zinc-50/80 border-zinc-200/80 opacity-85"
                         }`}
                     >
                       {/* Top Row: Coupon Code & Tag */}
@@ -1673,13 +2332,14 @@ export default function CartPage() {
                         ) : isEligible ? (
                           <button
                             onClick={() => handleApplyCoupon(coupon.code)}
+                            disabled={couponState.validationLoading}
                             className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white text-xs font-black shadow-md shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                           >
-                            Apply Coupon
+                            {couponState.validationLoading ? "Checking..." : "Apply Coupon"}
                           </button>
                         ) : (
                           <span className="text-[11px] font-bold text-zinc-400 bg-zinc-100 px-3 py-1.5 rounded-xl">
-                            Min ${coupon.minOrder}
+                            Min ₹{coupon.minOrder}
                           </span>
                         )}
                       </div>
@@ -1698,7 +2358,7 @@ export default function CartPage() {
                       {!isEligible && (
                         <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-[11px] font-semibold text-rose-700">
                           <span>
-                            Add <strong>${shortfall.toFixed(2)}</strong> more to activate this discount
+                            Add <strong>₹{shortfall.toFixed(2)}</strong> more to activate this discount
                           </span>
                           <Link
                             href="/menu"
@@ -1717,7 +2377,7 @@ export default function CartPage() {
               {/* Modal Footer */}
               <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between shrink-0">
                 <span className="text-xs text-zinc-500 font-medium">
-                  Coupons cannot be clubbed with SuperCoins redemption.
+                  Coupons cannot be clubbed with CreditCoins redemption.
                 </span>
                 <button
                   onClick={() => setIsCouponsModalOpen(false)}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, Suspense } from "react";
+import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -25,73 +25,64 @@ import {
   Volume2,
   VolumeX,
   Zap,
+  ChevronRight,
+  Star,
+  Package,
+  Timer,
+  Truck,
 } from "lucide-react";
 import { useCart } from "../../../context/CartContext";
+import api from "../../../lib/axiosInstance";
+
+const isCoordinate = (point) =>
+  Number.isFinite(Number(point?.lat)) &&
+  Number.isFinite(Number(point?.lng)) &&
+  Number(point.lat) >= -90 && Number(point.lat) <= 90 &&
+  Number(point.lng) >= -180 && Number(point.lng) <= 180;
+
+const distanceInKm = (start, end) => {
+  if (!isCoordinate(start) || !isCoordinate(end)) return null;
+  const radians = (degrees) => (degrees * Math.PI) / 180;
+  const latDelta = radians(Number(end.lat) - Number(start.lat));
+  const lngDelta = radians(Number(end.lng) - Number(start.lng));
+  const value = Math.sin(latDelta / 2) ** 2 +
+    Math.cos(radians(Number(start.lat))) * Math.cos(radians(Number(end.lat))) * Math.sin(lngDelta / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+};
 
 function LiveTrackingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderIdParam = searchParams.get("id");
 
-  const { ordersHistory, userProfile } = useCart();
+  const { ordersHistory } = useCart();
 
-  // Find target order or fall back to first active / latest order
+  // Find only a real order. Tracking never renders sample orders or sample GPS.
   const targetOrder = useMemo(() => {
     if (orderIdParam) {
-      const found = (ordersHistory || []).find((o) => o.id === orderIdParam);
+      const found = (ordersHistory || []).find(
+        (o) => String(o.id) === String(orderIdParam) || String(o.dbId) === String(orderIdParam)
+      );
       if (found) return found;
+      return null;
     }
-    // Default to first active order or first order in history
     const active = (ordersHistory || []).find(
-      (o) => o.status === "In Kitchen" || o.status === "Picked Up" || o.status === "Confirmed"
+      (o) => ["Order is Placed", "Confirmed", "Preparing", "In Kitchen", "Packing", "Out for Delivery", "Picked Up"].includes(o.status)
     );
     if (active) return active;
-    return ordersHistory?.[0] || {
-      id: "ORD-98421",
-      date: "Today, 8:30 PM",
-      status: "In Kitchen",
-      orderMode: "delivery",
-      total: 38.45,
-      deliveryFee: 0,
-      discount: 5.0,
-      taxes: 3.45,
-      tip: 2.0,
-      itemTotal: 38.0,
-      deliveryAddress: "42 Flavor Street, Manhattan, NY 10001",
-      deliveryInstruction: "Ring doorbell twice, leave at doorstep (Pure Veg Thermal Bag)",
-      paymentMethod: "Apple Pay (Verified)",
-      eta: "18-22 mins",
-      items: [
-        {
-          title: "Paneer Butter Masala (Satvik)",
-          price: 15.99,
-          quantity: 1,
-          image: "/img/menu/paneer-butter-masala.jpg",
-          note: "Mild spice, no onion garlic",
-        },
-        {
-          title: "Garlic Butter Naan (Tandoori)",
-          price: 4.49,
-          quantity: 2,
-          image: "/img/menu/butter-naan.jpg",
-          note: "Crispy and warm",
-        },
-        {
-          title: "Royal Saffron Kesar Lassi",
-          price: 5.99,
-          quantity: 1,
-          image: "/img/menu/kesar-lassi.jpg",
-          note: "Chilled with pistachio garnishing",
-        },
-      ],
-    };
+    return ordersHistory?.[0] || null;
   }, [ordersHistory, orderIdParam]);
 
-  // Live Simulation / Progress state (0% to 100%)
-  const [progressPercent, setProgressPercent] = useState(48);
-  const [riderPosition, setRiderPosition] = useState({ x: 48, y: 52 });
-  const [mapTheme, setMapTheme] = useState("dark"); // "dark" | "satellite" | "light"
-  const [activeStepIndex, setActiveStepIndex] = useState(2); // 0: Placed, 1: Accepted, 2: Cooking, 3: On The Way, 4: Delivered
+  const trackingOrderId = targetOrder?.dbId || (/^[a-f\d]{24}$/i.test(orderIdParam || "") ? orderIdParam : null);
+  const [trackingData, setTrackingData] = useState(null);
+  const [trackingError, setTrackingError] = useState("");
+  const trackingLoading = Boolean(trackingOrderId) && !trackingData && !trackingError;
+  const [orderLookupTimedOut, setOrderLookupTimedOut] = useState(false);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const courierMarkerRef = useRef(null);
+  const destinationMarkerRef = useRef(null);
+  const hasCenteredMapRef = useRef(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -100,28 +91,120 @@ function LiveTrackingContent() {
   const [helpSuccess, setHelpSuccess] = useState(false);
   const [helpNote, setHelpNote] = useState("");
 
-  // Simulated live GPS rider movement
   useEffect(() => {
-    const interval = setInterval(() => {
-      setProgressPercent((prev) => {
-        if (prev >= 95) return 95;
-        const next = prev + 1;
-        // Calculate smooth curve position on SVG map
-        const t = next / 100;
-        const startX = 20, startY = 80; // Restaurant coords %
-        const endX = 80, endY = 25;     // User Home coords %
-        const controlX = 45, controlY = 20; // Bezier control
+    const timeout = window.setTimeout(() => setOrderLookupTimedOut(true), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [orderIdParam]);
 
-        // Quadratic bezier
-        const curX = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * controlX + t * t * endX;
-        const curY = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * controlY + t * t * endY;
+  useEffect(() => {
+    if (!trackingOrderId) {
+      return;
+    }
+    let isActive = true;
+    let requestInFlight = false;
+    const loadTracking = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const response = await api.get(`/checkout/tracking/${encodeURIComponent(trackingOrderId)}`);
+        if (response.data?.result !== "Done") {
+          throw new Error(response.data?.reason || "Tracking data is unavailable.");
+        }
+        if (isActive) {
+          setTrackingData(response.data.data);
+          setTrackingError("");
+        }
+      } catch (error) {
+        if (isActive) setTrackingError(error.response?.data?.reason || error.message || "Could not load live location.");
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    loadTracking();
+    const interval = window.setInterval(loadTracking, 5000);
+    return () => {
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [trackingOrderId]);
 
-        setRiderPosition({ x: curX, y: curY });
-        return next;
-      });
-    }, 3000);
+  const liveLocation = isCoordinate(trackingData?.location) ? trackingData.location : null;
+  const destination = isCoordinate(targetOrder?.deliveryCoordinates)
+    ? targetOrder.deliveryCoordinates
+    : isCoordinate(trackingData?.destination) ? trackingData.destination : null;
+  const liveDistanceKm = distanceInKm(liveLocation, destination);
 
-    return () => clearInterval(interval);
+  useEffect(() => {
+    if (!liveLocation || !mapContainerRef.current) return;
+    let isActive = true;
+
+    import("leaflet").then((leafletModule) => {
+      if (!isActive || !mapContainerRef.current) return;
+      const L = leafletModule.default;
+      let map = mapRef.current;
+      if (!map) {
+        map = L.map(mapContainerRef.current, { zoomControl: true, scrollWheelZoom: false });
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+        mapRef.current = map;
+      }
+
+      const courierLatLng = [Number(liveLocation.lat), Number(liveLocation.lng)];
+      if (!courierMarkerRef.current) {
+        courierMarkerRef.current = L.marker(courierLatLng, {
+          icon: L.divIcon({
+            className: "tracking-courier-icon",
+            html: '<span class="tracking-courier-dot"></span>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+          }),
+          title: trackingData?.deliveryBoy?.name || "Delivery partner",
+        }).addTo(map);
+        courierMarkerRef.current.bindTooltip(trackingData?.deliveryBoy?.name || "Delivery partner");
+      } else {
+        courierMarkerRef.current.setLatLng(courierLatLng);
+      }
+
+      if (destination) {
+        const destinationLatLng = [Number(destination.lat), Number(destination.lng)];
+        if (!destinationMarkerRef.current) {
+          destinationMarkerRef.current = L.circleMarker(destinationLatLng, {
+            radius: 8,
+            color: "#047857",
+            fillColor: "#10b981",
+            fillOpacity: 1,
+            weight: 3,
+          }).addTo(map).bindTooltip("Delivery address");
+        } else {
+          destinationMarkerRef.current.setLatLng(destinationLatLng);
+        }
+      }
+
+      if (!hasCenteredMapRef.current) {
+        if (destination) {
+          map.fitBounds(L.latLngBounds([courierLatLng, [Number(destination.lat), Number(destination.lng)]]), { padding: [40, 40], maxZoom: 15 });
+        } else {
+          map.setView(courierLatLng, 15);
+        }
+        hasCenteredMapRef.current = true;
+      } else {
+        map.panTo(courierLatLng, { animate: true, duration: 0.5 });
+      }
+      window.setTimeout(() => map.invalidateSize(), 0);
+    }).catch(() => {
+      if (isActive) setTrackingError("Could not load map tiles. Live coordinates are still being received.");
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [liveLocation?.lat, liveLocation?.lng, destination?.lat, destination?.lng, trackingData?.deliveryBoy?.name]);
+
+  useEffect(() => () => {
+    mapRef.current?.remove();
+    mapRef.current = null;
   }, []);
 
   const handleCopyShare = () => {
@@ -132,297 +215,234 @@ function LiveTrackingContent() {
     }
   };
 
-  const timelineSteps = [
-    {
-      id: "placed",
-      title: "Order Placed & Paid",
-      time: "8:14 PM",
-      desc: "Received by restaurant order desk",
-      status: "completed",
-    },
-    {
-      id: "accepted",
-      title: "Kitchen Accepted Order",
-      time: "8:16 PM",
-      desc: "Satvik pure veg cooking line allocated",
-      status: "completed",
-    },
-    {
-      id: "kitchen",
-      title: "Chef Preparing Fresh Meals",
-      time: "8:20 PM",
-      desc: "Simmering fresh gravies & tandoor breads",
-      status: "current",
-      eta: targetOrder.eta || "18-22 mins",
-    },
-    {
-      id: "pickup",
-      title: "Rider Picked Up & Sealed",
-      time: "Est. 8:34 PM",
-      desc: "Thermal hot-bag packed with tamper-proof seal",
-      status: "upcoming",
-    },
-    {
-      id: "delivered",
-      title: "Arriving at Doorstep",
-      time: "Est. 8:46 PM",
-      desc: targetOrder.deliveryAddress || "42 Flavor Street, Manhattan, NY",
-      status: "upcoming",
-    },
+  const trackingStatus = trackingData?.status || targetOrder?.status || "Waiting for order updates";
+  const normalizedStatus = String(trackingStatus).trim().toLowerCase();
+  const statusStages = [
+    { id: "placed", title: "Order placed", desc: "The restaurant received your order.", icon: <Receipt className="w-3 h-3" />, matches: ["order is placed", "ordered", "confirmed"] },
+    { id: "preparing", title: "Preparing", desc: "The kitchen is preparing your order.", icon: <Flame className="w-3 h-3" />, matches: ["preparing", "in kitchen", "order is under process"] },
+    { id: "packing", title: "Packing", desc: "Your order is being packed for dispatch.", icon: <Package className="w-3 h-3" />, matches: ["packing", "packed", "order is packed"] },
+    { id: "out-for-delivery", title: "Out for delivery", desc: "Your delivery partner is on the way.", icon: <Bike className="w-3 h-3" />, matches: ["out for delivery", "picked up"] },
+    { id: "delivered", title: "Delivered", desc: targetOrder?.deliveryAddress || "Order delivered.", icon: <MapPin className="w-3 h-3" />, matches: ["delivered", "completed", "served"] },
   ];
+  const currentStageIndex = statusStages.findIndex((stage) => stage.matches.includes(normalizedStatus));
+  const isCancelled = normalizedStatus === "cancelled";
+  const isDelivered = currentStageIndex === statusStages.length - 1;
+  const timelineSteps = statusStages.map((stage, index) => ({
+    ...stage,
+    time: index === currentStageIndex && trackingData?.statusUpdatedAt
+      ? new Date(trackingData.statusUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : index < currentStageIndex ? "Done" : "",
+    status: isCancelled ? "upcoming" : isDelivered || index < currentStageIndex ? "completed" : index === currentStageIndex ? "current" : "upcoming",
+  }));
+
+  if (!targetOrder) {
+    return (
+      <main className="min-h-screen bg-zinc-50 pt-36 sm:pt-40 flex items-center justify-center px-4">
+        <div className="max-w-sm text-center space-y-3">
+          {orderLookupTimedOut ? <MapPin className="mx-auto h-9 w-9 text-zinc-400" /> : <span className="mx-auto block h-8 w-8 rounded-full border-4 border-rose-200 border-t-rose-600 animate-spin" />}
+          <h1 className="text-lg font-black text-zinc-900">{orderLookupTimedOut ? "Order tracking unavailable" : "Loading order details"}</h1>
+          {orderLookupTimedOut && <p className="text-sm text-zinc-500">This order could not be found for your account.</p>}
+          <Link href="/orders" className="inline-flex text-sm font-bold text-rose-600">Back to orders</Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white pt-28 sm:pt-32 pb-24 selection:bg-rose-500 selection:text-white">
-      {/* Top Floating Navigation Header */}
+    <div className="min-h-screen bg-stone-50 pt-36 sm:pt-40 pb-24 selection:bg-rose-500 selection:text-white">
+
+      {/* ── Page Header ─────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 mb-6">
-        <div className="flex items-center justify-between gap-3 pb-4 border-b border-zinc-800">
-          <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center justify-between gap-3 pb-5 border-b border-zinc-200">
+
+          {/* Left: Back + Title */}
+          <div className="flex items-center gap-3">
             <Link
               href="/orders"
-              className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5 text-xs sm:text-sm font-bold"
+              className="p-2 sm:p-2.5 rounded-xl bg-white border border-zinc-200 text-zinc-600 hover:text-rose-600 hover:border-rose-200 shadow-sm transition-all flex items-center gap-1.5 text-xs sm:text-sm font-bold"
             >
               <ChevronLeft className="w-4 h-4" />
               <span className="hidden sm:inline">All Orders</span>
             </Link>
+
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-rose-400">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-rose-600">
                   Real-time GPS Tracking
                 </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                <span className="flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${liveLocation ? "bg-emerald-500 animate-ping" : "bg-zinc-400"}`} />
+                  <span className={`text-[10px] font-bold ${liveLocation ? "text-emerald-600" : "text-zinc-500"}`}>
+                    {liveLocation ? "LIVE" : trackingLoading ? "CONNECTING" : "GPS WAITING"}
+                  </span>
+                </span>
               </div>
-              <h1 className="text-base sm:text-xl lg:text-2xl font-black text-white flex items-center gap-2 font-mono">
-                <span>Order #{targetOrder.id}</span>
+              <h1 className="text-lg sm:text-2xl lg:text-3xl font-black text-zinc-900 tracking-tight font-mono">
+                Order #{targetOrder.displayId || targetOrder.id}
               </h1>
             </div>
           </div>
 
+          {/* Right: Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopyShare}
-              className="px-3 sm:px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer text-zinc-300 hover:text-white"
+              className="px-3 sm:px-4 py-2 rounded-xl bg-white hover:bg-rose-50 border border-zinc-200 hover:border-rose-200 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer text-zinc-700 hover:text-rose-600 shadow-sm"
             >
-              <Share2 className="w-3.5 h-3.5 text-rose-400" />
-              <span>{isCopied ? "Link Copied!" : "Share Link"}</span>
+              <Share2 className="w-3.5 h-3.5 text-rose-500" />
+              <span className="hidden sm:inline">{isCopied ? "Copied!" : "Share Link"}</span>
             </button>
             <button
               onClick={() => setShowHelpModal(true)}
-              className="px-3 sm:px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-black transition-all shadow-md shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer"
+              className="px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-700 hover:to-rose-600 text-white text-xs sm:text-sm font-black transition-all shadow-md shadow-rose-500/25 flex items-center gap-1.5 cursor-pointer"
             >
               <HelpCircle className="w-3.5 h-3.5" />
-              <span>Need Help?</span>
+              <span className="hidden sm:inline">Need Help?</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Interactive Map (Left/Top) & Order Status Lifecycle (Right/Bottom) */}
-      <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* ====================================================
-            LEFT: INTERACTIVE LIVE GPS MAP & RIDER HUD (7 Cols)
-        ==================================================== */}
+      {/* ── Main Grid ────────────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+
+        {/* ══════════════════════════════════════════
+            LEFT: LIVE GPS MAP + RIDER HUD (7 Cols)
+        ═════════════════════════════════════════ */}
         <div className="lg:col-span-7 space-y-4">
-          {/* Live Map Canvas Container */}
-          <div className="relative w-full h-[360px] sm:h-[440px] md:h-[500px] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-800 shadow-2xl">
-            {/* SVG Interactive Vector GPS Map */}
-            <svg
-              className="w-full h-full object-cover select-none"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-            >
-              <defs>
-                {/* Grid Pattern */}
-                <pattern
-                  id="map-grid"
-                  width="10"
-                  height="10"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <path
-                    d="M 10 0 L 0 0 0 10"
-                    fill="none"
-                    stroke={mapTheme === "dark" ? "#27272a" : "#3f3f46"}
-                    strokeWidth="0.25"
-                  />
-                </pattern>
 
-                {/* Route Glow Gradient */}
-                <linearGradient id="routeGlow" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#e11d48" stopOpacity="0.8" />
-                  <stop offset="50%" stopColor="#ffb800" stopOpacity="1" />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.9" />
-                </linearGradient>
+          {/* ETA Quick Strip */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 shadow-sm text-center">
+              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">ETA</p>
+              <p className="text-lg sm:text-xl font-black text-zinc-900 font-mono">{trackingData?.eta || "—"}</p>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-rose-50 to-amber-50 border border-rose-100 shadow-sm text-center">
+              <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">Status</p>
+              <p className="text-xs sm:text-sm font-black text-rose-700 truncate">{trackingStatus}</p>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 shadow-sm text-center">
+              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Distance</p>
+              <p className="text-lg sm:text-xl font-black text-zinc-900 font-mono">
+                {liveDistanceKm === null ? "—" : `${liveDistanceKm.toFixed(1)} km`}
+              </p>
+            </div>
+          </div>
 
-                <linearGradient id="routeBase" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity="0.2" />
-                </linearGradient>
-              </defs>
+          {/* Live Map Canvas */}
+          <div className="relative w-full h-[340px] sm:h-[420px] md:h-[480px] rounded-3xl overflow-hidden bg-white border border-zinc-200 shadow-lg">
+            <div ref={mapContainerRef} className="absolute inset-0" aria-label="Live delivery map" />
+            {!liveLocation && (
+              <div className="absolute inset-0 z-[500] flex items-center justify-center bg-zinc-50/90 p-6 text-center pointer-events-none">
+                <div className="max-w-xs space-y-2">
+                  <MapPin className="mx-auto h-8 w-8 text-rose-600" />
+                  <p className="text-sm font-bold text-zinc-900">
+                    {trackingLoading ? "Connecting to delivery GPS…" : "Waiting for delivery partner GPS"}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {trackingError || "The map will center on the courier when the backend receives their location."}
+                  </p>
+                </div>
+              </div>
+            )}
 
-              {/* Map Background with Grid */}
-              <rect width="100" height="100" fill={mapTheme === "dark" ? "#121215" : "#18181b"} />
-              <rect width="100" height="100" fill="url(#map-grid)" />
-
-              {/* City Street Layout Graphic Lines */}
-              <path
-                d="M 0 30 Q 30 35 60 15 T 100 20"
-                fill="none"
-                stroke="#27272a"
-                strokeWidth="1.8"
-              />
-              <path
-                d="M 0 65 Q 40 60 70 85 T 100 70"
-                fill="none"
-                stroke="#27272a"
-                strokeWidth="1.6"
-              />
-              <path
-                d="M 35 0 Q 30 50 45 100"
-                fill="none"
-                stroke="#27272a"
-                strokeWidth="2"
-              />
-              <path
-                d="M 75 0 Q 70 45 85 100"
-                fill="none"
-                stroke="#27272a"
-                strokeWidth="1.8"
-              />
-
-              {/* Delivery Route Path (Bezier from Restaurant (20, 80) to Home (80, 25)) */}
-              <path
-                d="M 20 80 Q 45 20 80 25"
-                fill="none"
-                stroke="#3f3f46"
-                strokeWidth="2.5"
-                strokeDasharray="2, 1"
-              />
-              <path
-                d="M 20 80 Q 45 20 80 25"
-                fill="none"
-                stroke="url(#routeGlow)"
-                strokeWidth="2"
-              />
-
-              {/* Restaurant Marker (Point: 20, 80) */}
-              <g transform="translate(20, 80)">
-                <circle r="5" fill="#e11d48" fillOpacity="0.2" className="animate-ping" />
-                <circle r="3.5" fill="#e11d48" stroke="#ffffff" strokeWidth="0.8" />
-              </g>
-
-              {/* Delivery Destination Marker (Point: 80, 25) */}
-              <g transform="translate(80, 25)">
-                <circle r="5" fill="#10b981" fillOpacity="0.2" className="animate-ping" />
-                <circle r="3.5" fill="#10b981" stroke="#ffffff" strokeWidth="0.8" />
-              </g>
-
-              {/* Dynamic Moving Delivery Rider Marker */}
-              <g transform={`translate(${riderPosition.x}, ${riderPosition.y})`}>
-                <circle r="6" fill="#ffb800" fillOpacity="0.3" className="animate-ping" />
-                <circle r="3.8" fill="#ffb800" stroke="#ffffff" strokeWidth="0.9" />
-              </g>
-            </svg>
-
-            {/* Map Floating HUD Overlay Info (Top Left) */}
-            <div className="absolute top-4 left-4 z-20 space-y-2 pointer-events-none">
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-zinc-950/85 backdrop-blur-md border border-zinc-800 shadow-xl space-y-1">
+            <div className="absolute top-3 left-3 z-20 space-y-2">
+              <div className="px-3.5 py-2.5 rounded-2xl bg-white/90 backdrop-blur-md border border-zinc-200 shadow-lg space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="text-[10px] sm:text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                    Live GPS Stream
+                  <span className={`w-2 h-2 rounded-full ${liveLocation ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"}`} />
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">
+                    {liveLocation ? "Backend GPS" : "GPS unavailable"}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-xl sm:text-2xl font-black text-white font-mono">
-                    {targetOrder.eta || "18 mins"}
-                  </span>
-                  <span className="text-xs text-rose-400 font-bold">Estimated Arrival</span>
+                  <span className="text-sm font-black text-zinc-900">{trackingStatus}</span>
                 </div>
-                <p className="text-[10px] sm:text-xs text-zinc-400">
-                  Rider is <strong>1.4 km away</strong> • Moving smoothly
+                <p className="text-[10px] text-zinc-500">
+                  {trackingData?.location?.updatedAt
+                    ? `Updated ${new Date(trackingData.location.updatedAt).toLocaleTimeString()}`
+                    : "Waiting for latest location"}
                 </p>
               </div>
             </div>
 
-            {/* Map Theme Toggle (Top Right) */}
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-zinc-950/80 backdrop-blur-md border border-zinc-800">
-              <button
-                onClick={() => setMapTheme(mapTheme === "dark" ? "satellite" : "dark")}
-                className="px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold bg-zinc-800 text-zinc-200 hover:text-white cursor-pointer"
-              >
-                {mapTheme === "dark" ? "Dark GPS" : "High Contrast"}
-              </button>
-            </div>
-
-            {/* Restaurant & Destination Pin Labels inside map */}
-            <div className="absolute bottom-4 left-4 z-20 p-2.5 rounded-xl bg-zinc-950/90 backdrop-blur-md border border-rose-500/30 text-[10px] sm:text-xs flex items-center gap-2 shadow-lg">
-              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              <span className="font-bold text-white">Tastora Pure Veg Kitchen</span>
-            </div>
-
-            <div className="absolute top-20 right-4 z-20 p-2.5 rounded-xl bg-zinc-950/90 backdrop-blur-md border border-emerald-500/30 text-[10px] sm:text-xs flex items-center gap-2 shadow-lg">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span className="font-bold text-white">Your Delivery Location</span>
-            </div>
+            {liveLocation && (
+              <div className="absolute bottom-3 left-3 z-[500] rounded-xl bg-white/95 px-3 py-2 text-[10px] font-semibold text-zinc-700 shadow">
+                {liveDistanceKm === null ? "Courier location received" : `${liveDistanceKm.toFixed(1)} km from your drop-off`}
+              </div>
+            )}
           </div>
 
-          {/* Delivery Partner / Rider Profile Card */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-lg space-y-4">
+          {/* Rider Profile Card */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3.5">
-                <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-600 to-amber-500 p-0.5 shadow-md">
-                  <div className="w-full h-full rounded-2xl bg-zinc-900 flex items-center justify-center overflow-hidden">
+                {/* Rider Avatar */}
+                <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-400 p-0.5 shadow-md">
+                  <div className="w-full h-full rounded-2xl bg-white flex items-center justify-center overflow-hidden">
                     <span className="text-2xl">🛵</span>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 border-2 border-zinc-900 text-[10px]">
-                    ✓
-                  </div>
+                  {trackingData?.deliveryBoy && (
+                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-[9px] text-white font-black">
+                      ✓
+                    </div>
+                  )}
                 </div>
 
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-sm sm:text-base font-black text-white">
-                      Rahul V. Sharma
+                    <h3 className="text-sm sm:text-base font-black text-zinc-900">
+                      {trackingData?.deliveryBoy?.name || "Delivery partner not assigned"}
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-bold border border-rose-500/30">
-                      Pure Veg Delivery Expert
-                    </span>
+                    {trackingData?.deliveryBoy && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-100">
+                        Assigned
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Eco Electric Scooter • NY-8492 • ⭐ 4.9 (1,420 deliveries)
-                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-[11px] text-zinc-500">
+                      {liveLocation ? "Live GPS location received" : "Waiting for delivery GPS"}
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Rider Action Buttons */}
               <div className="flex items-center gap-2">
-                <a
-                  href="tel:+18005550199"
-                  className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20"
-                >
-                  <Phone className="w-4 h-4" />
-                  <span>Call Rider</span>
-                </a>
+                {trackingData?.deliveryBoy?.phone ? (
+                  <a
+                    href={`tel:${trackingData.deliveryBoy.phone}`}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm shadow-emerald-500/20"
+                  >
+                    <Phone className="w-4 h-4" />
+                    <span>Call Rider</span>
+                  </a>
+                ) : (
+                  <span className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-zinc-100 text-zinc-500 text-xs sm:text-sm font-bold flex items-center justify-center gap-2">
+                    <Phone className="w-4 h-4" />
+                    <span>Phone unavailable</span>
+                  </span>
+                )}
                 <button
                   onClick={() => setShowHelpModal(true)}
-                  className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 border border-zinc-700 cursor-pointer"
+                  className="flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 border border-zinc-200 cursor-pointer"
                 >
-                  <MessageSquare className="w-4 h-4" />
+                  <MessageSquare className="w-4 h-4 text-rose-500" />
                   <span>Message</span>
                 </button>
               </div>
             </div>
 
-            {/* Sanitization & Satvik Certified Hot Bag Banner */}
-            <div className="p-3 rounded-2xl bg-zinc-950/70 border border-zinc-800 flex items-center gap-3 text-xs text-zinc-300">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+            {/* Satvik Certified Banner */}
+            <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center gap-3 text-xs">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
                 <ShieldCheck className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-white text-xs">
-                  100% Thermal Hot-Bag • Contactless &amp; Satvik Guaranteed
+                <p className="font-bold text-emerald-800 text-xs">
+                  100% Thermal Hot-Bag • Contactless & Satvik Guaranteed
                 </p>
-                <p className="text-[11px] text-zinc-400 truncate">
+                <p className="text-[11px] text-emerald-600 truncate">
                   Sealed with pure veg tamper-proof tape. Temperature checked before dispatch.
                 </p>
               </div>
@@ -430,53 +450,56 @@ function LiveTrackingContent() {
           </div>
         </div>
 
-        {/* ====================================================
-            RIGHT: FULL ORDER LIFECYCLE TIMELINE & RECEIPT (5 Cols)
-        ==================================================== */}
+        {/* ══════════════════════════════════════════
+            RIGHT: ORDER LIFECYCLE + RECEIPT (5 Cols)
+        ═════════════════════════════════════════ */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Full Lifecycle Step-By-Step Timeline */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+
+          {/* Order Lifecycle Timeline */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
               <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-rose-400" />
-                <h3 className="text-sm sm:text-base font-black text-white">
+                <div className="w-8 h-8 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center">
+                  <Truck className="w-4 h-4 text-rose-600" />
+                </div>
+                <h3 className="text-sm sm:text-base font-black text-zinc-900">
                   Order Status Lifecycle
                 </h3>
               </div>
-              <span className="text-[11px] font-bold text-zinc-400 font-mono">
+              <span className="text-[11px] font-bold text-zinc-400 bg-zinc-50 border border-zinc-200 px-2 py-0.5 rounded-lg font-mono">
                 5 Stages
               </span>
             </div>
 
-            {/* Vertical Lifecycle Stepper */}
-            <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-800">
+            {/* Vertical Stepper */}
+            <div className="relative pl-6 space-y-5 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-100">
               {timelineSteps.map((step, idx) => {
                 const isDone = step.status === "completed";
                 const isCurrent = step.status === "current";
 
                 return (
                   <div key={step.id} className="relative space-y-1">
-                    {/* Stepper Dot */}
+                    {/* Stepper dot */}
                     <div
-                      className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[9px] font-black ${
+                      className={`absolute -left-6 top-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[9px] font-black transition-all ${
                         isDone
-                          ? "bg-emerald-500 border-emerald-400 text-white"
+                          ? "bg-emerald-500 border-emerald-400 text-white shadow-sm"
                           : isCurrent
-                          ? "bg-rose-600 border-white text-white ring-4 ring-rose-500/30 animate-pulse"
-                          : "bg-zinc-800 border-zinc-700 text-zinc-400"
+                          ? "bg-rose-600 border-white text-white ring-4 ring-rose-500/20 shadow-md"
+                          : "bg-white border-zinc-200 text-zinc-400"
                       }`}
                     >
-                      {isDone ? "✓" : idx + 1}
+                      {isDone ? "✓" : isCurrent ? <Flame className="w-2.5 h-2.5" /> : idx + 1}
                     </div>
 
                     <div className="flex items-baseline justify-between gap-2">
                       <h4
                         className={`text-xs sm:text-sm font-black ${
                           isCurrent
-                            ? "text-rose-400"
+                            ? "text-rose-600"
                             : isDone
-                            ? "text-white"
-                            : "text-zinc-500"
+                            ? "text-zinc-900"
+                            : "text-zinc-400"
                         }`}
                       >
                         {step.title}
@@ -486,14 +509,16 @@ function LiveTrackingContent() {
                       </span>
                     </div>
 
-                    <p className="text-[11px] sm:text-xs text-zinc-400">
-                      {step.desc}
-                    </p>
+                    <p className="text-[11px] sm:text-xs text-zinc-500">{step.desc}</p>
 
                     {isCurrent && (
-                      <div className="mt-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 font-medium flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                        <span>Freshly handcrafting items with pure satvik spices</span>
+                      <div className="mt-2 p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-[11px] text-rose-600 font-medium flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>
+                          {step.id === "out-for-delivery"
+                            ? liveLocation ? "Courier GPS is updating live." : "Waiting for the courier's first GPS update."
+                            : step.desc}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -502,103 +527,153 @@ function LiveTrackingContent() {
             </div>
           </div>
 
-          {/* Ordered Dishes & Delivery Address Drawer */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-lg space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-              <h3 className="text-sm sm:text-base font-black text-white">
-                Ordered Items ({targetOrder.items?.length || 0})
-              </h3>
-              <span className="text-xs font-mono font-bold text-rose-400">
-                ${targetOrder.total?.toFixed(2)}
+          {/* Ordered Items + Delivery Address */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-white border border-zinc-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center">
+                  <Receipt className="w-4 h-4 text-amber-600" />
+                </div>
+                <h3 className="text-sm sm:text-base font-black text-zinc-900">
+                  Ordered Items ({targetOrder.items?.length || 0})
+                </h3>
+              </div>
+              <span className="text-xs font-mono font-black text-rose-600 bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-xl">
+                ₹{typeof targetOrder.total === "number" ? targetOrder.total.toFixed(2) : targetOrder.total || "0.00"}
               </span>
             </div>
 
             {/* Dish List */}
-            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
               {targetOrder.items?.map((dish, idx) => (
                 <div
                   key={idx}
-                  className="p-2.5 rounded-2xl bg-zinc-950/60 border border-zinc-800/80 flex items-center justify-between gap-3"
+                  className="p-2.5 rounded-2xl bg-zinc-50 border border-zinc-100 flex items-center justify-between gap-3 hover:bg-rose-50/40 hover:border-rose-100 transition-colors"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-zinc-800 overflow-hidden shrink-0 border border-zinc-700">
-                      <img
-                        src={dish.image}
-                        alt={dish.title}
-                        className="w-full h-full object-cover"
-                      />
+                    <div className="w-10 h-10 rounded-xl bg-zinc-100 overflow-hidden shrink-0 border border-zinc-200">
+                      {dish.image || dish.pic ? (
+                        <img
+                          src={dish.image || dish.pic}
+                          alt={dish.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-lg">🍽️</div>
+                      )}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-white truncate">
-                        {dish.title}
-                      </p>
-                      <p className="text-[10px] text-zinc-400">
+                      <p className="text-xs font-bold text-zinc-900 truncate">{dish.title}</p>
+                      <p className="text-[10px] text-zinc-500">
                         Qty: {dish.quantity}x •{" "}
-                        <span className="text-rose-400 font-mono font-bold">
-                          ${(dish.price * dish.quantity).toFixed(2)}
+                        <span className="text-rose-600 font-mono font-bold">
+                          ₹{(dish.price * dish.quantity).toFixed(2)}
                         </span>
                       </p>
                     </div>
                   </div>
+                  <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full shrink-0">
+                    ×{dish.quantity}
+                  </span>
                 </div>
               ))}
             </div>
 
-            {/* Destination Address */}
-            <div className="p-3 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-1 text-xs">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            {/* Delivery Address */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-zinc-50 to-emerald-50/30 border border-zinc-200 space-y-1 text-xs">
+              <div className="flex items-start gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
                 <div>
-                  <span className="text-zinc-400 text-[10px] block uppercase font-bold tracking-wider">
+                  <span className="text-[10px] text-zinc-400 block uppercase font-bold tracking-wider mb-0.5">
                     Delivering To:
                   </span>
-                  <p className="font-bold text-white text-xs">
+                  <p className="font-bold text-zinc-900 text-xs leading-relaxed">
                     {targetOrder.deliveryAddress || "42 Flavor Street, Manhattan, NY"}
                   </p>
                   {targetOrder.deliveryInstruction && (
-                    <p className="text-[11px] text-zinc-400 italic mt-0.5">
-                      Note: "{targetOrder.deliveryInstruction}"
+                    <p className="text-[11px] text-zinc-500 italic mt-1">
+                      "{targetOrder.deliveryInstruction}"
                     </p>
                   )}
                 </div>
               </div>
             </div>
+
+            {/* Payment Method */}
+            {targetOrder.paymentMethod && (
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-zinc-500 font-medium">Payment</span>
+                <span className="font-bold text-zinc-900">{targetOrder.paymentMethod}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              href="/menu"
+              className="p-3.5 rounded-2xl bg-white border border-zinc-200 hover:border-rose-200 hover:bg-rose-50 shadow-sm transition-all flex items-center gap-2.5 text-xs font-bold text-zinc-700 hover:text-rose-600 group"
+            >
+              <div className="w-8 h-8 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center shrink-0 group-hover:bg-rose-100 transition-colors">
+                <Flame className="w-4 h-4 text-rose-600" />
+              </div>
+              <span>Order Again</span>
+            </Link>
+            <Link
+              href="/orders"
+              className="p-3.5 rounded-2xl bg-white border border-zinc-200 hover:border-amber-200 hover:bg-amber-50 shadow-sm transition-all flex items-center gap-2.5 text-xs font-bold text-zinc-700 hover:text-amber-700 group"
+            >
+              <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
+                <Package className="w-4 h-4 text-amber-600" />
+              </div>
+              <span>All Orders</span>
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* ====================================================
+      {/* ══════════════════════════════════════════
           HELP & SUPPORT CONCIERGE MODAL
-      ==================================================== */}
+      ═════════════════════════════════════════ */}
       {showHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-zinc-900 rounded-3xl max-w-md w-full border border-zinc-700 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-5 bg-gradient-to-r from-rose-600 to-amber-500 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-white" />
-                <h3 className="text-base font-black">Live Order Support</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full border border-zinc-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-5 bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <HelpCircle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">Live Order Support</h3>
+                  <p className="text-[11px] text-rose-100">24/7 Concierge Care Desk</p>
+                </div>
               </div>
               <button
                 onClick={() => setShowHelpModal(false)}
-                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center cursor-pointer transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="p-3 rounded-2xl bg-zinc-950 border border-zinc-800 flex justify-between items-center">
+            <div className="p-5 space-y-4">
+              {/* Order ID badge */}
+              <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 flex justify-between items-center">
                 <div>
-                  <span className="text-[10px] text-zinc-400 block font-bold uppercase">Tracking ID</span>
-                  <span className="font-mono font-bold text-white text-sm">{targetOrder.id}</span>
+                  <span className="text-[10px] text-zinc-400 block font-bold uppercase tracking-wider">Tracking ID</span>
+                  <span className="font-mono font-black text-zinc-900 text-sm">{targetOrder.displayId || targetOrder.id}</span>
                 </div>
-                <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-bold border border-rose-500/30">
+                <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100">
                   Live Dispatch
                 </span>
               </div>
 
+              {/* Quick Issues */}
               <div className="space-y-2">
-                <p className="font-bold text-zinc-300">Quick Assistance Options:</p>
+                <p className="text-xs font-bold text-zinc-700">Quick Assistance Options:</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     "⏱️ Delivery Delay",
@@ -609,7 +684,11 @@ function LiveTrackingContent() {
                     <button
                       key={opt}
                       onClick={() => setHelpNote(opt)}
-                      className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold text-left cursor-pointer transition-colors text-[11px]"
+                      className={`p-2.5 rounded-xl border text-[11px] font-bold text-left cursor-pointer transition-all ${
+                        helpNote === opt
+                          ? "bg-rose-50 border-rose-200 text-rose-700"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-rose-50/50 hover:border-rose-100"
+                      }`}
                     >
                       {opt}
                     </button>
@@ -617,22 +696,22 @@ function LiveTrackingContent() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <textarea
-                  rows="3"
-                  value={helpNote}
-                  onChange={(e) => setHelpNote(e.target.value)}
-                  placeholder="Describe your request to our 24/7 care desk..."
-                  className="w-full p-3 rounded-2xl bg-zinc-950 border border-zinc-800 text-white placeholder:text-zinc-500 focus:outline-none focus:border-rose-500 text-xs font-medium"
-                />
-              </div>
+              {/* Text input */}
+              <textarea
+                rows="3"
+                value={helpNote}
+                onChange={(e) => setHelpNote(e.target.value)}
+                placeholder="Describe your request to our 24/7 care desk..."
+                className="w-full p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 text-xs font-medium transition-all resize-none"
+              />
 
-              <div className="flex items-center gap-2 pt-1">
+              {/* Actions */}
+              <div className="flex items-center gap-2.5">
                 <a
                   href="tel:+18007873834"
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-center flex items-center justify-center gap-1.5 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-700 font-bold text-xs text-center flex items-center justify-center gap-1.5 transition-colors"
                 >
-                  <Phone className="w-3.5 h-3.5 text-rose-400" />
+                  <Phone className="w-3.5 h-3.5 text-rose-600" />
                   <span>Call Concierge</span>
                 </a>
                 <button
@@ -644,16 +723,16 @@ function LiveTrackingContent() {
                       setHelpNote("");
                     }, 1800);
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-center transition-all cursor-pointer shadow-md shadow-rose-600/20"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-700 hover:to-rose-600 text-white font-black text-xs text-center transition-all cursor-pointer shadow-md shadow-rose-500/20"
                 >
                   Submit Query
                 </button>
               </div>
 
               {helpSuccess && (
-                <p className="text-center text-emerald-400 font-bold flex items-center justify-center gap-1.5 pt-1">
+                <p className="text-center text-emerald-600 font-bold flex items-center justify-center gap-1.5 py-1 bg-emerald-50 rounded-xl border border-emerald-100 text-xs">
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Ticket received. We will resolve immediately!</span>
+                  <span>Ticket received. We'll resolve immediately!</span>
                 </p>
               )}
             </div>
@@ -666,7 +745,18 @@ function LiveTrackingContent() {
 
 export default function OrderTrackingPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">Loading Live Tracking...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center mx-auto shadow-lg animate-pulse">
+              <span className="text-2xl">🛵</span>
+            </div>
+            <p className="text-sm font-bold text-zinc-600">Loading Live Tracking...</p>
+          </div>
+        </div>
+      }
+    >
       <LiveTrackingContent />
     </Suspense>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, use } from "react";
+import React, { useState, useMemo, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import {
@@ -37,13 +37,14 @@ import {
   Crown,
 } from "lucide-react";
 import { useCart } from "../../../context/CartContext";
+import api from "../../../lib/axiosInstance";
 
 export default function OrderDetailsPage({ params }) {
   const router = useRouter();
   const routeParams = useParams();
   // Handle async params or sync params
   const rawId = params ? (typeof params.then === "function" ? use(params).id : params.id) : routeParams?.id;
-  const orderId = rawId || "ORD-98421";
+  const orderId = rawId || "";
 
   const {
     ordersHistory,
@@ -57,75 +58,50 @@ export default function OrderDetailsPage({ params }) {
 
   // Find the exact order or reservation from CartContext
   const order = useMemo(() => {
-    const foundOrder = (ordersHistory || []).find((o) => o.id === orderId);
+    const foundOrder = (ordersHistory || []).find(
+      (o) => String(o.id) === String(orderId) || String(o.dbId) === String(orderId) || String(o.displayId) === String(orderId)
+    );
     if (foundOrder) return { ...foundOrder, _cardType: "order" };
 
-    const foundRes = (reservationsHistory || []).find((r) => r.id === orderId);
+    const foundRes = (reservationsHistory || []).find(
+      (r) => String(r.id) === String(orderId) || String(r.dbId) === String(orderId)
+    );
     if (foundRes) return { ...foundRes, _cardType: "reservation" };
 
-    return {
-      id: orderId,
-      _cardType: "order",
-      date: "Today, 8:15 PM",
-      status: "In Kitchen",
-      orderMode: "delivery",
-      total: 38.45,
-      deliveryFee: 0,
-      discount: 5.0,
-      couponApplied: "PUREVEG50",
-      taxes: 3.45,
-      tip: 2.0,
-      itemTotal: 38.0,
-      deliveryAddress: "42 Flavor Street, Midtown Manhattan, NY 10001",
-      deliveryInstruction: "Ring doorbell twice, leave at doorstep (Pure Veg Thermal Bag)",
-      paymentMethod: "Apple Pay (Verified)",
-      eta: "18-22 mins",
-      driverName: "Rahul V. Sharma",
-      driverPhone: "+1 (800) 555-0199",
-      items: [
-        {
-          title: "Paneer Butter Masala (Satvik)",
-          price: 15.99,
-          quantity: 1,
-          image: "/img/menu/paneer-butter-masala.jpg",
-          note: "Mild spice, no onion garlic",
-        },
-        {
-          title: "Garlic Butter Naan (Tandoori)",
-          price: 4.49,
-          quantity: 2,
-          image: "/img/menu/butter-naan.jpg",
-          note: "Crispy and warm",
-        },
-        {
-          title: "Royal Saffron Kesar Lassi",
-          price: 5.99,
-          quantity: 1,
-          image: "/img/menu/kesar-lassi.jpg",
-          note: "Chilled with pistachio garnishing",
-        },
-      ],
-    };
+    return null;
   }, [ordersHistory, reservationsHistory, orderId]);
 
   const isLiveOrder =
-    order.status === "In Kitchen" ||
-    order.status === "Confirmed" ||
-    order.status === "Picked Up";
+    order?.status === "In Kitchen" ||
+    order?.status === "Confirmed" ||
+    order?.status === "Picked Up";
+  const isCompletedOrder = ["delivered", "completed", "served"].includes(String(order?.status || "").toLowerCase());
+  const hasOrderComment = Boolean(order?.commentRewarded || order?.customerComment || order?.ratingGiven);
+  const hasDeliveryRating = Boolean(order?.deliveryRatingRewarded || order?.deliveryRating);
 
   // Modal States
   const [isCopied, setIsCopied] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
-  const [selectedRating, setSelectedRating] = useState(order.ratingGiven || 5);
+  const [ratingMode, setRatingMode] = useState("food");
+  const [selectedRating, setSelectedRating] = useState(order?.ratingGiven || 5);
   const [selectedTags, setSelectedTags] = useState([]);
-  const [feedbackText, setFeedbackText] = useState(order.feedback || "");
+  const [feedbackText, setFeedbackText] = useState(order?.feedback || "");
   const [ratingSuccess, setRatingSuccess] = useState(false);
+  const [ratingError, setRatingError] = useState("");
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [coinRewardNotice, setCoinRewardNotice] = useState("");
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpIssueType, setHelpIssueType] = useState("delay");
   const [helpMessage, setHelpMessage] = useState("");
   const [helpSuccess, setHelpSuccess] = useState(false);
+  const [lookupTimedOut, setLookupTimedOut] = useState(false);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setLookupTimedOut(true), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [orderId]);
 
   const handleCopyId = () => {
     if (typeof window !== "undefined") {
@@ -147,15 +123,59 @@ export default function OrderDetailsPage({ params }) {
     setTimeout(() => setToastMessage(""), 3500);
   };
 
-  const handleSaveRating = (e) => {
+  const handleSaveRating = async (e) => {
     e.preventDefault();
-    const combinedFeedback = [...selectedTags, feedbackText.trim()].filter(Boolean).join(" • ");
-    rateOrder(order.id, selectedRating, combinedFeedback);
-    setRatingSuccess(true);
-    setTimeout(() => {
-      setShowRatingModal(false);
-      setRatingSuccess(false);
-    }, 1500);
+    const comment = ratingMode === "food"
+      ? [...selectedTags, feedbackText.trim()].filter(Boolean).join(" • ")
+      : feedbackText.trim();
+    if (!order.dbId) {
+      setRatingError("This order is not linked to a saved order record.");
+      return;
+    }
+    if (ratingMode === "food" && comment.trim().length < 5) {
+      setRatingError("Write at least 5 characters so we can reward your food comment.");
+      return;
+    }
+    if (ratingMode === "delivery" && !order.deliveryBoyAssigned) {
+      setRatingError("A delivery partner is not assigned to this order.");
+      return;
+    }
+
+    setRatingError("");
+    setRatingSubmitting(true);
+    try {
+      const response = ratingMode === "food"
+        ? await api.post(`/checkout/${encodeURIComponent(order.dbId)}/comment`, {
+            rating: selectedRating,
+            comment,
+          })
+        : await api.post(`/checkout/${encodeURIComponent(order.dbId)}/delivery-rating`, {
+            rating: selectedRating,
+            feedback: feedbackText.trim(),
+          });
+      if (response.data?.result !== "Done") {
+        throw new Error(response.data?.reason || `Could not save your ${ratingMode === "food" ? "food comment" : "delivery rating"}.`);
+      }
+
+      const result = response.data.data || {};
+      if (ratingMode === "food") {
+        rateOrder(order.id, selectedRating, comment);
+        setCoinRewardNotice(`You earned ${result.customerCoinsAdded ?? 5} CreditCoins.`);
+      } else {
+        setCoinRewardNotice(`Your delivery partner earned ${result.deliveryBoyCoinsAdded ?? 10} CreditCoins.`);
+      }
+      setRatingSuccess(true);
+      setTimeout(() => {
+        setShowRatingModal(false);
+        setRatingSuccess(false);
+        setFeedbackText("");
+        router.refresh();
+      }, 2200);
+    } catch (error) {
+      setRatingError(error.response?.data?.reason || error.message || `Could not save your ${ratingMode === "food" ? "food comment" : "delivery rating"}.`);
+    } finally {
+      setRatingSubmitting(false);
+    }
   };
 
   const handleHelpSubmit = (e) => {
@@ -173,6 +193,30 @@ export default function OrderDetailsPage({ params }) {
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   };
+
+  if (!order) {
+    return (
+      <main className="min-h-screen bg-zinc-50/70 pt-36 sm:pt-40 pb-24 flex items-center justify-center px-4">
+        <div className="text-center space-y-3">
+          {!lookupTimedOut ? (
+            <>
+              <span className="mx-auto block h-8 w-8 rounded-full border-4 border-rose-200 border-t-rose-600 animate-spin" />
+              <p className="text-sm font-semibold text-zinc-600">Loading order details...</p>
+            </>
+          ) : (
+            <>
+              <Package className="mx-auto h-8 w-8 text-zinc-400" />
+              <h1 className="text-lg font-black text-zinc-900">Order not found</h1>
+              <p className="text-sm text-zinc-500">This order may not be available for the current account.</p>
+              <Link href="/orders" className="inline-flex text-sm font-bold text-rose-600 hover:text-rose-700">
+                Back to orders
+              </Link>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50/70 pt-36 sm:pt-40 pb-24 sm:pb-28">
@@ -407,7 +451,7 @@ export default function OrderDetailsPage({ params }) {
                   </div>
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
                     <Sparkles className="w-3 h-3 text-amber-500" />
-                    <span>+{Math.floor((order.total || 0) * 2)} SuperCoins Earned</span>
+                    <span>+{Math.floor((order.total || 0) * 2)} CreditCoins Earned</span>
                   </span>
                 </div>
 
@@ -469,7 +513,7 @@ export default function OrderDetailsPage({ params }) {
                 </div>
 
                 {/* Rate & Review Badge / Action */}
-                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between gap-3">
+                <div className="pt-2 border-t border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   {order.ratingGiven ? (
                     <div className="flex items-center gap-2 text-xs text-amber-950 font-bold">
                       <div className="flex items-center text-amber-400">
@@ -491,17 +535,50 @@ export default function OrderDetailsPage({ params }) {
                     </div>
                   ) : (
                     <p className="text-xs text-zinc-500">
-                      How was the freshness and taste of this meal?
+                      Food rating: {order.customerRating || "Not rated"}
                     </p>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setShowRatingModal(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition-all cursor-pointer shrink-0"
-                  >
-                    {order.ratingGiven ? "Edit Review" : "Rate Meal ⭐"}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {isCompletedOrder && !hasOrderComment && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRatingMode("food");
+                          setSelectedRating(order.customerRating || 5);
+                          setFeedbackText("");
+                          setRatingError("");
+                          setCoinRewardNotice("");
+                          setShowRatingModal(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Rate food • +5 coins
+                      </button>
+                    )}
+                    {hasOrderComment && <span className="self-center text-[11px] font-bold text-emerald-700">Food comment submitted</span>}
+                    {isCompletedOrder && order.deliveryBoyAssigned && !hasDeliveryRating && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRatingMode("delivery");
+                          setSelectedRating(order.deliveryRating || 5);
+                          setFeedbackText("");
+                          setSelectedTags([]);
+                          setRatingError("");
+                          setCoinRewardNotice("");
+                          setShowRatingModal(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Rate delivery • +10 coins
+                      </button>
+                    )}
+                    {hasDeliveryRating && (
+                      <span className="self-center text-[11px] font-bold text-sky-700">Delivery rated {order.deliveryRating}/5</span>
+                    )}
+                    {!isCompletedOrder && <span className="self-center text-[11px] text-zinc-400">Ratings available after delivery</span>}
+                  </div>
                 </div>
               </div>
             )}
@@ -630,6 +707,16 @@ export default function OrderDetailsPage({ params }) {
                       </div>
                     )}
 
+                    {order.coinsDiscount > 0 && (
+                      <div className="flex justify-between text-amber-600 font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          <Coins className="w-3.5 h-3.5 text-amber-500" />
+                          CreditCoins ({order.coinsUsed || Math.round(order.coinsDiscount * 50)} used):
+                        </span>
+                        <span className="font-mono font-bold">-₹{order.coinsDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+
                     <div className="flex justify-between">
                       <span>Delivery &amp; Packaging:</span>
                       <span className="font-mono text-zinc-900">
@@ -653,6 +740,21 @@ export default function OrderDetailsPage({ params }) {
                       <span>Total Amount Paid:</span>
                       <span className="text-rose-600 font-mono">${order.total?.toFixed(2)}</span>
                     </div>
+
+                    {(order.creditCoinsEarned > 0 || Math.floor((Number(order.itemTotal) || 0) * 0.10) > 0) && (
+                      <div className="mt-3 p-3 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">🪙</span>
+                          <div>
+                            <p className="font-bold text-amber-950">CreditCoins Earned</p>
+                            <p className="text-[10px] text-amber-800">10% cashback added to your balance</p>
+                          </div>
+                        </div>
+                        <span className="font-mono font-black text-amber-900 bg-amber-200/70 px-2 py-0.5 rounded-full text-xs">
+                          +{order.creditCoinsEarned || Math.floor((Number(order.itemTotal) || 0) * 0.10)} Coins
+                        </span>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -791,7 +893,9 @@ export default function OrderDetailsPage({ params }) {
             <div className="p-4 sm:p-5 bg-gradient-to-r from-rose-600 to-amber-500 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Star className="w-5 h-5 fill-white" />
-                <h3 className="text-sm sm:text-base font-black">Rate Your Pure Veg Experience</h3>
+                <h3 className="text-sm sm:text-base font-black">
+                  {ratingMode === "food" ? "Rate the food" : `Rate ${order.deliveryBoyName || "your delivery partner"}`}
+                </h3>
               </div>
               <button
                 onClick={() => setShowRatingModal(false)}
@@ -807,7 +911,7 @@ export default function OrderDetailsPage({ params }) {
                   Order: {order.id}
                 </p>
                 <p className="text-xs sm:text-sm font-black text-zinc-900">
-                  How was the taste and freshness?
+                  {ratingMode === "food" ? "How was the taste and freshness?" : "How was your delivery experience?"}
                 </p>
               </div>
 
@@ -830,7 +934,7 @@ export default function OrderDetailsPage({ params }) {
                 ))}
               </div>
 
-              <div className="space-y-1.5">
+              {ratingMode === "food" && <div className="space-y-1.5">
                 <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 block text-center">
                   What did you love the most?
                 </span>
@@ -860,17 +964,26 @@ export default function OrderDetailsPage({ params }) {
                     );
                   })}
                 </div>
-              </div>
+              </div>}
 
               <div className="space-y-1">
                 <textarea
                   rows="3"
+                  required={ratingMode === "food"}
+                  minLength={ratingMode === "food" ? 5 : undefined}
                   value={feedbackText}
                   onChange={(e) => setFeedbackText(e.target.value)}
-                  placeholder="Share any special compliments for our Chef..."
+                  placeholder={ratingMode === "food" ? "Comment on the food (at least 5 characters)..." : "Optional delivery feedback..."}
                   className="w-full p-2.5 sm:p-3 text-xs sm:text-sm rounded-xl sm:rounded-2xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 font-medium"
                 />
               </div>
+
+              <p className="text-center text-[11px] font-semibold text-amber-800">
+                {ratingMode === "food" ? "Your food comment earns 5 CreditCoins." : "Your delivery partner earns 10 CreditCoins from this rating."}
+              </p>
+
+              {ratingError && <p role="alert" className="text-center text-xs font-semibold text-red-600">{ratingError}</p>}
+              {coinRewardNotice && ratingSuccess && <p className="text-center text-xs font-bold text-emerald-700">{coinRewardNotice}</p>}
 
               {ratingSuccess && (
                 <p className="text-center text-xs sm:text-sm font-bold text-emerald-600 flex items-center justify-center gap-1">
@@ -881,9 +994,10 @@ export default function OrderDetailsPage({ params }) {
 
               <button
                 type="submit"
+                disabled={ratingSubmitting || hasOrderComment || !isCompletedOrder}
                 className="w-full py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white text-xs sm:text-sm font-black shadow-md shadow-rose-600/20 transition-all cursor-pointer"
               >
-                Submit Review
+                {ratingSubmitting ? "Submitting..." : hasOrderComment ? "Comment already submitted" : !isCompletedOrder ? "Available after delivery" : "Submit Comment & Earn Coins"}
               </button>
             </form>
           </div>

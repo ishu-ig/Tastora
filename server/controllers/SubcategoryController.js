@@ -6,6 +6,10 @@ async function createRecord(req, res) {
         let data = new Subcategory(req.body)
         if (req.file) {
             data.pic = req.file.path
+        } else if (req.body.pic) {
+            data.pic = req.body.pic
+        } else if (req.body.picUrl) {
+            data.pic = req.body.picUrl
         }
         await data.save()
         let finalData = await Subcategory.findOne({ _id: data._id })
@@ -88,9 +92,17 @@ async function updateRecord(req, res) {
             data.name = req.body.name ?? data.name
             data.maincategory = req.body.maincategory ?? data.maincategory
             data.active = req.body.active ?? data.active
+            const newPicUrl = req.body.picUrl || req.body.pic
             if (req.file) {
-                await deleteFromCloudinary(data.pic); // delete old BEFORE overwriting
+                if (data.pic && data.pic.includes("cloudinary")) {
+                    await deleteFromCloudinary(data.pic);
+                }
                 data.pic = req.file.path;
+            } else if (newPicUrl && newPicUrl !== data.pic) {
+                if (data.pic && data.pic.includes("cloudinary")) {
+                    await deleteFromCloudinary(data.pic);
+                }
+                data.pic = newPicUrl;
             }
             await data.save();
             let finalData = await Subcategory.findOne({ _id: data._id })

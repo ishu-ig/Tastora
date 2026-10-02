@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import api from "../lib/axiosInstance"; // fixed typo: axiosIntance → axiosInstance
+import { useAuth } from "../context/AuthContext";
 import {
   X,
   Phone,
@@ -16,12 +17,14 @@ import {
 } from "lucide-react";
 
 export function AuthModal({ isOpen, onClose, initialMode = "login", onAuthSuccess }) {
+  const { loginUser, checkAuth } = useAuth() || {};
   const [mode, setMode] = useState(initialMode); // "login" | "signup"
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [timer, setTimer] = useState(30);
   const [isLoading, setIsLoading] = useState(false);
   const [authSuccess, setAuthSuccess] = useState(false);
+  const [devOtp, setDevOtp] = useState(null); // shown in dev mode only
 
   // Form Fields
   const [phone, setPhone] = useState("");
@@ -36,6 +39,7 @@ export function AuthModal({ isOpen, onClose, initialMode = "login", onAuthSucces
     setOtpSent(false);
     setOtp(["", "", "", "", "", ""]);
     setAuthSuccess(false);
+    setDevOtp(null);
   }, [initialMode, isOpen]);
 
   // Resend OTP countdown timer
@@ -90,7 +94,12 @@ export function AuthModal({ isOpen, onClose, initialMode = "login", onAuthSucces
         payload.email = email;
       }
 
-      await api.post("/user/send-otp", payload);
+      const res = await api.post("/user/send-otp", payload);
+
+      // In development, backend returns devOtp for easy testing
+      if (res.data?.devOtp) {
+        setDevOtp(res.data.devOtp);
+      }
 
       setOtpSent(true);
       setTimer(30);
@@ -126,17 +135,42 @@ export function AuthModal({ isOpen, onClose, initialMode = "login", onAuthSucces
         otp: enteredCode,
       });
 
+      // Save token + user info so the axios interceptor can use it
+      // and the Navbar updates instantly without waiting for cookie parsing
+      if (res.data?.token) {
+        localStorage.setItem("token", res.data.token);
+      }
+      if (res.data?.userid) {
+        localStorage.setItem("userid", String(res.data.userid));
+      }
+      if (res.data?.data?.role) {
+        localStorage.setItem("role", res.data.data.role);
+      }
+
+      // ✅ KEY FIX: Immediately update AuthContext with the full user object
+      // from the OTP response. This triggers CartContext's useEffect to sync
+      // creditCoinsBalance and useCreditCoins hook to read the real value.
+      // Without this, user stays null in AuthContext until page reload.
+      if (loginUser && res.data?.data) {
+        loginUser(res.data.data);
+      }
+
       setAuthSuccess(true);
 
       if (onAuthSuccess) {
         onAuthSuccess(res.data.data);
       }
 
+      // Close modal after brief success animation, then re-fetch from server
+      // as a safety net to get latest DB state (e.g. updated coins balance)
       setTimeout(() => {
         onClose();
         setAuthSuccess(false);
         setOtpSent(false);
-      }, 1800);
+        setDevOtp(null);
+        // Re-fetch fresh user data from server after modal closes
+        if (checkAuth) checkAuth();
+      }, 1200);
     } catch (error) {
       const reason = error.response?.data?.reason;
       const message =
@@ -259,6 +293,28 @@ export function AuthModal({ isOpen, onClose, initialMode = "login", onAuthSucces
                   </strong>
                 </p>
               </div>
+
+              {/* Dev OTP hint banner */}
+              {devOtp && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">🔧 Dev Mode OTP</p>
+                    <p className="text-2xl font-black font-mono tracking-[0.3em] text-amber-900 mt-0.5">{devOtp}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const digits = devOtp.split("");
+                      setOtp(digits);
+                      // auto-focus last input
+                      setTimeout(() => document.getElementById(`otp-5`)?.focus(), 50);
+                    }}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
+              )}
 
               <div className="flex items-center justify-center gap-2 pt-2">
                 {otp.map((digit, idx) => (

@@ -1,68 +1,206 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useDispatch, useSelector } from "react-redux";
+import { getCheckout } from "@/Redux/ActionCreators/CheckoutActionCreators";
+import { getBooking } from "@/Redux/ActionCreators/BookingActionCreators";
 import {
-  Package,
-  Clock,
-  CheckCircle2,
   ChevronRight,
-  RotateCcw,
+  CheckCircle2,
   FileText,
   Star,
-  MapPin,
-  ChevronDown,
-  ChevronUp,
   Search,
-  Filter,
-  ArrowRight,
   Sparkles,
-  ShieldCheck,
-  Bike,
-  Store,
   Utensils,
-  Copy,
-  CheckCheck,
   Receipt,
-  Download,
   Printer,
   X,
   Phone,
-  MessageSquare,
   HelpCircle,
-  Flame,
-  Tag,
-  Coins,
-  ExternalLink,
   Navigation,
   Calendar,
-  Users,
 } from "lucide-react";
 import HistoryCard from "../../Component/HistoryCard";
 import { useCart } from "../../context/CartContext";
+import api from "../../lib/axiosInstance";
+
+const CUR = "₹";
+
+// Backend orderStatus (lower-cased)  →  status names the UI understands
+const STATUS_MAP = {
+  "awaiting payment": "Awaiting Payment",
+  "order is placed": "Order is Placed",
+  "ordered": "Order is Placed",
+  "order is under process": "Preparing",
+  "preparing": "Preparing",
+  "packing": "Packing",
+  "packed": "Packing",
+  "order is packed": "Packing",
+  "out for delivery": "Out for Delivery",
+  "picked up": "Out for Delivery",
+  "delivered": "Delivered",
+  "cancelled": "Cancelled",
+};
+
+// Convert a Checkout document from the API into the shape this page / HistoryCard expects
+const adaptCheckout = (c) => {
+  const created = new Date(c.createdAt);
+  const addr = c.user?.defaultAddress;
+  return {
+    ...c,
+    id: c._id,
+    dbId: c._id,
+    displayId: `ORD-${String(c._id).slice(-6).toUpperCase()}`,
+    type: "order",
+    orderMode: c.orderMode || "delivery",
+    status: STATUS_MAP[c.orderStatus?.toLowerCase()] || c.orderStatus,
+    date: created.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }),
+    _createdAt: created.getTime(),
+    items: (c.products || []).map((p) => {
+      const productObj = p.product || {};
+      const displayName = (() => {
+        const candidates = [p.title, p.name, p.customName, p.productName, p.productTitle, productObj?.title, productObj?.name, productObj?.customName, productObj?.productName, productObj?.productTitle];
+        for (const candidate of candidates) {
+          if (typeof candidate === "string") {
+            const cleaned = candidate.trim();
+            if (!cleaned) continue;
+            if (/^[a-f0-9]{24}$/i.test(cleaned) || /^ord-/i.test(cleaned) || /^res-/i.test(cleaned)) continue;
+            if (["full", "half", "regular", "standard", "default"].includes(cleaned.toLowerCase())) continue;
+            return cleaned;
+          }
+        }
+        return "Item";
+      })();
+      const rawImage = p.image || p.pic || productObj.pic || productObj.image;
+      const image = Array.isArray(rawImage) ? rawImage.find((src) => typeof src === "string" && src.trim()) : rawImage;
+      const imageUrl = typeof image === "string" && image.trim()
+        ? image.startsWith("http")
+          ? image
+          : `${process.env.NEXT_PUBLIC_BACKEND_SERVER || "http://localhost:8000"}/${image.replace(/^\/+/, "")}`
+        : "";
+
+      return {
+        title: displayName,
+        price: Number(p.price ?? p.product?.basePrice ?? 0),
+        quantity: Number(p.qty ?? p.quantity ?? 1),
+        image: imageUrl,
+      };
+    }),
+    itemTotal: c.subtotal ?? 0,
+    deliveryFee: c.deliveryCharge ?? 0,
+    discount: c.discount ?? 0,
+    taxes: c.taxes ?? 0,
+    tip: c.tip ?? 0,
+    paymentMethod: c.paymentMode,
+    deliveryAddress: [addr?.address, addr?.city, addr?.state, addr?.pin].filter(Boolean).join(", "),
+    ratingGiven: c.customerRating || c.ratingGiven || null,
+    feedback: c.customerComment || c.feedback || null,
+    commentRewarded: Boolean(c.commentRewarded),
+    deliveryRating: Number(c.deliveryRating) || null,
+    deliveryFeedback: c.deliveryFeedback || "",
+    deliveryRatingRewarded: Boolean(c.deliveryRatingRewarded),
+    deliveryBoyAssigned: Boolean(c.deliveryBoy?._id || c.deliveryBoy),
+    deliveryBoyName: c.deliveryBoy?.name || "",
+  };
+};
+
+// Convert a Booking document from the API into the reservation shape HistoryCard expects
+const adaptBooking = (b, fallbackName) => ({
+  ...b,
+  id: b._id,
+  displayId: `RES-${String(b._id).slice(-6).toUpperCase()}`,
+  dbId: b._id,
+  type: "reservation",
+  _cardType: "reservation",
+  date: b.date ? `${b.date} • ${b.time || ""}` : "Upcoming",
+  bookingDate: b.date || "",
+  _createdAt: new Date(b.createdAt || 0).getTime(),
+  status: b.bookingState === "cancelled"
+    ? "Cancelled"
+    : b.bookingStatus === "true" || b.bookingStatus === true ? "Confirmed" : "Pending",
+  zone: b.zone || b.resturent?.name || b.restaurantName || "Dining Room",
+  zoneImage: b.zoneImage || b.resturent?.pic || "",
+  guests: b.seats || 2,
+  slots: b.time ? b.time.split(", ") : [],
+  occasion: b.occasion || "",
+  dietary: b.dietary || "",
+  addOns: Array.isArray(b.addOns) ? b.addOns : [],
+  guestName: b.guestName || b.user?.name || fallbackName || "Guest",
+  guestPhone: b.guestPhone || b.user?.phone || "",
+  guestEmail: b.guestEmail || b.user?.email || "",
+  specialNotes: b.specialNotes || "",
+  total: b.total || 0,
+  paymentMethod: b.paymentMode || "COD",
+  paymentStatus: b.paymentStatus || "Pending",
+  ratingGiven: b.ratingGiven || null,
+  feedback: b.feedback || null,
+});
+
+const isLiveStatus = (s) => ["Order is Placed", "Confirmed", "Preparing", "In Kitchen", "Packing", "Out for Delivery", "Picked Up"].includes(s);
 
 export default function OrdersPage() {
   const router = useRouter();
+  const dispatch = useDispatch();
   const {
-    ordersHistory,
     reorderPastOrder,
     rateOrder,
-    reservationsHistory,
     cancelReservation,
     rateReservation,
     addToCart,
     userProfile,
   } = useCart();
 
+  // ── Server data from Redux ─────────────────────────────────────────────────
+  // Both reducers keep a plain array of documents
+  const checkoutAll = useSelector((st) => st.CheckoutStateData);
+  const bookingAll = useSelector((st) => st.BookingStateData);
+
+  // Get userId from userProfile (populated by CartContext/AuthContext)
+  const userId = useMemo(
+    () =>
+      userProfile?._id ||
+      userProfile?.id ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("userid") || localStorage.getItem("userId")
+        : null),
+    [userProfile]
+  );
+
+  useEffect(() => {
+    dispatch(getCheckout());
+    dispatch(getBooking());
+  }, [dispatch]);
+
+  // The actions return every user's records, so keep only this user's.
+  // (Better: point your sagas at /checkout/user/:userid and /booking/user/:userid.)
+  const ordersHistory = useMemo(
+    () =>
+      (Array.isArray(checkoutAll) ? checkoutAll : [])
+        .filter((o) => String(o.user?._id || o.user) === String(userId))
+        // Orders paid online but never confirmed shouldn't clutter history
+        .filter((o) => !(o.orderStatus?.toLowerCase() === "awaiting payment" && o.paymentStatus !== "Done"))
+        .map(adaptCheckout),
+    [checkoutAll, userId]
+  );
+
+  const reservationsHistory = useMemo(
+    () =>
+      (Array.isArray(bookingAll) ? bookingAll : [])
+        .filter((b) => String(b.user?._id || b.user) === String(userId))
+        .map((b) => adaptBooking(b, userProfile?.name)),
+    [bookingAll, userId, userProfile?.name]
+  );
+
   // Main Section: "food" | "dining"
   const [mainSection, setMainSection] = useState("food");
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
-  const [foodTab, setFoodTab] = useState("all"); // "all" | "active" | "delivery" | "takeaway" | "delivered"
-  const [diningTab, setDiningTab] = useState("all"); // "all" | "dinein" | "reservations" | "upcoming" | "completed"
-  const [sortBy, setSortBy] = useState("newest"); // "newest" | "oldest" | "price_desc" | "price_asc"
+  const [foodTab, setFoodTab] = useState("all");
+  const [diningTab, setDiningTab] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
 
   // Invoice Modal State
   const [invoiceOrder, setInvoiceOrder] = useState(null);
@@ -73,19 +211,23 @@ export default function OrdersPage() {
   const [feedbackText, setFeedbackText] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
   const [ratingSuccess, setRatingSuccess] = useState(false);
+  const [ratingError, setRatingError] = useState("");
+  const [commentRewardMessage, setCommentRewardMessage] = useState("");
+  const [reservationActionError, setReservationActionError] = useState("");
 
   // Help & Support Modal State
   const [helpOrder, setHelpOrder] = useState(null);
   const [helpIssueType, setHelpIssueType] = useState("delay");
   const [helpMessage, setHelpMessage] = useState("");
   const [helpSuccess, setHelpSuccess] = useState(false);
+  const [ticketId, setTicketId] = useState("");
 
   // Toast State for Reorder
   const [toastMessage, setToastMessage] = useState("");
 
   const handleReorder = (order) => {
     reorderPastOrder(order);
-    setToastMessage(`Added all ${order.items?.length || 0} items from ${order.id} to cart!`);
+    setToastMessage(`Added all ${order.items?.length || 0} items from ${order.displayId || order.id} to cart!`);
     setTimeout(() => setToastMessage(""), 3500);
   };
 
@@ -97,26 +239,63 @@ export default function OrdersPage() {
 
   const handleOpenRating = (orderOrRes) => {
     setRatingOrder(orderOrRes);
+    setRatingError("");
+    setCommentRewardMessage("");
     setSelectedRating(orderOrRes.ratingGiven || 5);
     setFeedbackText(orderOrRes.feedback || "");
     setSelectedTags([]);
     setRatingSuccess(false);
   };
 
-  const handleSaveRating = (e) => {
+  const handleSaveRating = async (e) => {
     e.preventDefault();
     if (!ratingOrder) return;
-    const combinedFeedback = [
-      ...selectedTags,
-      feedbackText.trim(),
-    ]
-      .filter(Boolean)
-      .join(" • ");
+    const combinedFeedback = [...selectedTags, feedbackText.trim()].filter(Boolean).join(" • ");
 
     if (ratingOrder.type === "reservation") {
-      rateReservation(ratingOrder.id, selectedRating, combinedFeedback);
+      try {
+        const bookingId = ratingOrder.dbId || ratingOrder._id || ratingOrder.id;
+        const response = await api.post(`/booking/${encodeURIComponent(bookingId)}/rating`, {
+          ratingGiven: selectedRating,
+          feedback: combinedFeedback,
+        });
+        if (response.data?.result !== "Done") {
+          throw new Error(response.data?.reason || "Could not save booking rating.");
+        }
+        rateReservation(ratingOrder.id, selectedRating, combinedFeedback);
+        dispatch(getBooking());
+      } catch (error) {
+        setRatingError(error.response?.data?.reason || error.message || "Could not save booking rating.");
+        return;
+      }
     } else {
-      rateOrder(ratingOrder.id, selectedRating, combinedFeedback);
+      if (combinedFeedback.trim().length < 5) {
+        setRatingError("Write at least 5 characters so we can reward your comment.");
+        return;
+      }
+      if (!ratingOrder.dbId || ratingOrder.commentRewarded) {
+        setRatingError("This order already has a comment or is not linked to a saved order.");
+        return;
+      }
+      try {
+        const orderId = ratingOrder.dbId || ratingOrder._id || ratingOrder.id;
+        const response = await api.post(`/checkout/${encodeURIComponent(orderId)}/comment`, {
+          rating: selectedRating,
+          comment: combinedFeedback,
+        });
+        if (response.data?.result !== "Done") {
+          throw new Error(response.data?.reason || "Could not save your comment.");
+        }
+        const result = response.data.data || {};
+        rateOrder(ratingOrder.id, selectedRating, combinedFeedback);
+        setCommentRewardMessage(
+          `You earned ${result.customerCoinsAdded ?? 5} CreditCoins.${result.deliveryBoyCoinsAdded ? ` Your delivery partner earned ${result.deliveryBoyCoinsAdded}.` : result.deliveryBoyAssigned ? " Your delivery partner's reward was already issued." : " No delivery partner was assigned to this order."}`
+        );
+        dispatch(getCheckout());
+      } catch (error) {
+        setRatingError(error.response?.data?.reason || error.message || "Could not save your comment.");
+        return;
+      }
     }
 
     setRatingSuccess(true);
@@ -126,8 +305,23 @@ export default function OrdersPage() {
     }, 1500);
   };
 
+  const handleCancelReservation = async (reservationId) => {
+    try {
+      const response = await api.post(`/booking/${encodeURIComponent(reservationId)}/cancel`);
+      if (response.data?.result !== "Done") {
+        throw new Error(response.data?.reason || "Could not cancel this booking.");
+      }
+      setReservationActionError("");
+      dispatch(getBooking());
+    } catch (error) {
+      setReservationActionError(error.response?.data?.reason || error.message || "Could not cancel this booking.");
+    }
+  };
+
   const handleHelpSubmit = (e) => {
     e.preventDefault();
+    // Generated once per submit (previously re-rolled on every render)
+    setTicketId(`TCK-${Math.floor(Math.random() * 90000 + 10000)}`);
     setHelpSuccess(true);
     setTimeout(() => {
       setHelpOrder(null);
@@ -137,41 +331,35 @@ export default function OrdersPage() {
   };
 
   const toggleRatingTag = (tag) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
   // 1. Food Orders List (Delivery & Takeaway)
-  const allFoodOrders = useMemo(() => {
-    return (ordersHistory || []).filter((o) => o.orderMode !== "dinein");
-  }, [ordersHistory]);
+  const allFoodOrders = useMemo(
+    () => ordersHistory.filter((o) => o.orderMode !== "dinein"),
+    [ordersHistory]
+  );
 
   // 2. Dining Orders List (Table Dine-In + Reservations)
   const allDiningOrders = useMemo(() => {
-    const dineInOrders = (ordersHistory || [])
+    const dineInOrders = ordersHistory
       .filter((o) => o.orderMode === "dinein")
       .map((o) => ({ ...o, _cardType: "order" }));
-    const reservations = (reservationsHistory || []).map((r) => ({
-      ...r,
-      _cardType: "reservation",
-    }));
+    const reservations = reservationsHistory.map((r) => ({ ...r, _cardType: "reservation" }));
     return [...dineInOrders, ...reservations];
   }, [ordersHistory, reservationsHistory]);
 
   // Active Live Food Delivery Order
-  const activeLiveFoodOrder = useMemo(() => {
-    return allFoodOrders.find(
-      (o) => o.status === "In Kitchen" || o.status === "Picked Up" || o.status === "Confirmed"
-    );
-  }, [allFoodOrders]);
+  const activeLiveFoodOrder = useMemo(
+    () => allFoodOrders.find((o) => isLiveStatus(o.status)),
+    [allFoodOrders]
+  );
 
   // Active / Upcoming Dining Reservation or Dine-In
-  const activeDiningExperience = useMemo(() => {
-    return allDiningOrders.find(
-      (d) => d.status === "Confirmed" || d.status === "In Kitchen"
-    );
-  }, [allDiningOrders]);
+  const activeDiningExperience = useMemo(
+    () => allDiningOrders.find((d) => d.status === "Confirmed" || d.status === "In Kitchen"),
+    [allDiningOrders]
+  );
 
   // Filtered & Sorted Display Items
   const displayItems = useMemo(() => {
@@ -181,38 +369,29 @@ export default function OrdersPage() {
     if (mainSection === "food") {
       list = allFoodOrders
         .filter((ord) => {
-          // Tab Filtering
           if (foodTab === "active") {
-            const isActive =
-              ord.status === "In Kitchen" ||
-              ord.status === "Confirmed" ||
-              ord.status === "Picked Up";
-            if (!isActive) return false;
+            if (!isLiveStatus(ord.status)) return false;
           } else if (foodTab === "delivery") {
-            if (ord.orderMode && ord.orderMode !== "delivery") return false;
+            if (ord.orderMode !== "delivery") return false;
           } else if (foodTab === "takeaway") {
             if (ord.orderMode !== "takeaway") return false;
           } else if (foodTab === "delivered") {
             if (ord.status !== "Delivered" && ord.status !== "Completed") return false;
           }
 
-          // Query Search
           if (q) {
-            const matchesId = ord.id.toLowerCase().includes(q);
-            const matchesDate = ord.date.toLowerCase().includes(q);
+            const matchesId =
+              String(ord.id).toLowerCase().includes(q) || ord.displayId?.toLowerCase().includes(q);
+            const matchesDate = ord.date?.toLowerCase().includes(q);
             const matchesAddr = ord.deliveryAddress?.toLowerCase().includes(q);
-            const matchesItems = ord.items?.some((it) =>
-              it.title.toLowerCase().includes(q)
-            );
+            const matchesItems = ord.items?.some((it) => it.title?.toLowerCase().includes(q));
             return matchesId || matchesDate || matchesAddr || matchesItems;
           }
           return true;
         })
         .map((o) => ({ ...o, _cardType: "order" }));
     } else {
-      // Dining Section
       list = allDiningOrders.filter((item) => {
-        // Tab Filtering
         if (diningTab === "dinein") {
           if (item._cardType !== "order" || item.orderMode !== "dinein") return false;
         } else if (diningTab === "reservations") {
@@ -223,45 +402,48 @@ export default function OrdersPage() {
           if (item.status !== "Completed" && item.status !== "Delivered") return false;
         }
 
-        // Query Search
         if (q) {
-          const matchesId = item.id?.toLowerCase().includes(q);
+          const matchesId =
+            String(item.id || "").toLowerCase().includes(q) || item.displayId?.toLowerCase().includes(q);
           const matchesDate = item.date?.toLowerCase().includes(q);
           const matchesZone = item.zone?.toLowerCase().includes(q);
           const matchesGuest = item.guestName?.toLowerCase().includes(q);
           const matchesTable = item.tableNumber?.toLowerCase().includes(q);
-          const matchesItems = item.items?.some((it) =>
-            it.title.toLowerCase().includes(q)
-          );
+          const matchesItems = item.items?.some((it) => it.title?.toLowerCase().includes(q));
           return matchesId || matchesDate || matchesZone || matchesGuest || matchesTable || matchesItems;
         }
         return true;
       });
     }
 
-    // Sorting
-    return list.sort((a, b) => {
+    // Sorting — real timestamps for orders and reservations
+    const byNewest = (a, b) =>
+      (b._createdAt || 0) - (a._createdAt || 0) || String(b.id).localeCompare(String(a.id));
+    return [...list].sort((a, b) => {
       if (sortBy === "price_desc") return (b.total || 0) - (a.total || 0);
       if (sortBy === "price_asc") return (a.total || 0) - (b.total || 0);
-      if (sortBy === "oldest") return a.id.localeCompare(b.id);
-      return b.id.localeCompare(a.id); // default newest
+      if (sortBy === "oldest") return -byNewest(a, b);
+      return byNewest(a, b);
     });
   }, [mainSection, allFoodOrders, allDiningOrders, foodTab, diningTab, searchQuery, sortBy]);
 
   // Counts
   const foodOrdersCount = allFoodOrders.length;
   const diningOrdersCount = allDiningOrders.length;
-  const activeFoodCount = allFoodOrders.filter(
-    (o) => o.status === "In Kitchen" || o.status === "Confirmed" || o.status === "Picked Up"
-  ).length;
+  const activeFoodCount = allFoodOrders.filter((o) => isLiveStatus(o.status)).length;
   const activeDiningCount = allDiningOrders.filter(
     (d) => d.status === "Confirmed" || d.status === "In Kitchen"
   ).length;
-  const dineInCount = (ordersHistory || []).filter((o) => o.orderMode === "dinein").length;
-  const reservationsCount = (reservationsHistory || []).length;
+  const dineInCount = ordersHistory.filter((o) => o.orderMode === "dinein").length;
+  const reservationsCount = reservationsHistory.length;
 
   return (
     <div className="min-h-screen bg-zinc-50/70 pt-36 sm:pt-40 pb-24 sm:pb-28">
+      {reservationActionError && (
+        <div role="alert" className="mx-auto mb-4 max-w-6xl px-4 text-xs font-semibold text-red-700">
+          {reservationActionError}
+        </div>
+      )}
       {/* Floating Reorder Toast */}
       {toastMessage && (
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 max-w-md mx-auto sm:mx-0 animate-in fade-in slide-in-from-bottom-5 duration-300">
@@ -342,9 +524,7 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* ====================================================
-            PRIMARY SECTION TOGGLE (Food Orders vs Dining Orders)
-        ==================================================== */}
+        {/* PRIMARY SECTION TOGGLE */}
         <div className="flex items-center justify-center sm:justify-start">
           <div className="inline-flex p-1.5 rounded-2xl bg-zinc-200/80 border border-zinc-300/70 shadow-xs max-w-md w-full sm:w-auto">
             <button
@@ -352,11 +532,10 @@ export default function OrdersPage() {
                 setMainSection("food");
                 setFoodTab("all");
               }}
-              className={`flex-1 sm:flex-initial py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                mainSection === "food"
-                  ? "bg-white text-zinc-900 shadow-sm border border-zinc-200/60"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
+              className={`flex-1 sm:flex-initial py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${mainSection === "food"
+                ? "bg-white text-zinc-900 shadow-sm border border-zinc-200/60"
+                : "text-zinc-600 hover:text-zinc-900"
+                }`}
             >
               <Utensils className="w-4 h-4 text-rose-600" />
               <span>🍲 Food Orders ({foodOrdersCount})</span>
@@ -367,11 +546,10 @@ export default function OrdersPage() {
                 setMainSection("dining");
                 setDiningTab("all");
               }}
-              className={`flex-1 sm:flex-initial py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                mainSection === "dining"
-                  ? "bg-white text-zinc-900 shadow-sm border border-zinc-200/60"
-                  : "text-zinc-600 hover:text-zinc-900"
-              }`}
+              className={`flex-1 sm:flex-initial py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${mainSection === "dining"
+                ? "bg-white text-zinc-900 shadow-sm border border-zinc-200/60"
+                : "text-zinc-600 hover:text-zinc-900"
+                }`}
             >
               <Calendar className="w-4 h-4 text-amber-600" />
               <span>🍽️ Dining Orders ({diningOrdersCount})</span>
@@ -379,9 +557,7 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* ====================================================
-            A. ACTIVE HIGHLIGHT BANNER FOR FOOD ORDERS
-        ==================================================== */}
+        {/* A. ACTIVE HIGHLIGHT BANNER — FOOD */}
         {mainSection === "food" && activeLiveFoodOrder && (
           <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white p-4 sm:p-6 shadow-xl shadow-rose-600/15 border border-rose-400/30">
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3.5 sm:gap-5">
@@ -392,19 +568,19 @@ export default function OrdersPage() {
                     Live Dispatch
                   </span>
                   <span className="text-[11px] sm:text-xs font-bold text-rose-100 font-mono">
-                    #{activeLiveFoodOrder.id}
+                    #{activeLiveFoodOrder.displayId}
                   </span>
                 </div>
                 <h2 className="text-lg sm:text-xl md:text-2xl font-black text-white tracking-tight">
                   {activeLiveFoodOrder.status === "In Kitchen"
                     ? "👨‍🍳 Chef is Preparing Your Feast"
                     : activeLiveFoodOrder.status === "Picked Up"
-                    ? "🛵 Your Food is On The Way!"
-                    : "✨ Order Confirmed & In Cooking Queue"}
+                      ? "🛵 Your Food is On The Way!"
+                      : "✨ Order Confirmed & In Cooking Queue"}
                 </h2>
                 <p className="text-[11px] sm:text-xs md:text-sm text-rose-100/90 font-medium max-w-xl">
-                  {activeLiveFoodOrder.items?.map((it) => `${it.quantity}x ${it.title}`).join(", ")} •{" "}
-                  {activeLiveFoodOrder.deliveryAddress || "Midtown Manhattan, NY"}
+                  {activeLiveFoodOrder.items?.map((it) => `${it.quantity}x ${it.title}`).join(", ")}
+                  {activeLiveFoodOrder.deliveryAddress ? ` • ${activeLiveFoodOrder.deliveryAddress}` : ""}
                 </p>
               </div>
 
@@ -417,7 +593,7 @@ export default function OrdersPage() {
                   <span>Support</span>
                 </button>
                 <Link
-                  href={`/orders/track?id=${activeLiveFoodOrder.id}`}
+                  href={`/orders/track?id=${activeLiveFoodOrder._id}`}
                   className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl bg-white text-rose-600 hover:bg-rose-50 text-[11px] sm:text-xs md:text-sm font-black transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
                   <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -428,9 +604,7 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {/* ====================================================
-            B. ACTIVE HIGHLIGHT BANNER FOR DINING ORDERS
-        ==================================================== */}
+        {/* B. ACTIVE HIGHLIGHT BANNER — DINING */}
         {mainSection === "dining" && activeDiningExperience && (
           <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-r from-amber-700 via-rose-800 to-amber-600 text-white p-4 sm:p-6 shadow-xl shadow-amber-500/15 border border-amber-400/30">
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3.5 sm:gap-5">
@@ -441,7 +615,7 @@ export default function OrdersPage() {
                     Confirmed Dining Experience
                   </span>
                   <span className="text-[11px] sm:text-xs font-bold text-amber-100 font-mono">
-                    #{activeDiningExperience.id}
+                    #{activeDiningExperience.displayId || activeDiningExperience.id}
                   </span>
                 </div>
                 <h2 className="text-lg sm:text-xl md:text-2xl font-black text-white tracking-tight">
@@ -469,7 +643,6 @@ export default function OrdersPage() {
         {/* Search Bar & Sub-Filter Toolbar */}
         <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 border border-zinc-200/80 shadow-xs space-y-3 sm:space-y-4">
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 sm:gap-3">
-            {/* Search Box */}
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3 sm:top-3.5" />
               <input
@@ -493,7 +666,6 @@ export default function OrdersPage() {
               )}
             </div>
 
-            {/* Sort Selector */}
             <div className="flex items-center gap-2">
               <label htmlFor="sort-by" className="text-[11px] sm:text-xs font-bold text-zinc-500 shrink-0 hidden sm:inline">
                 Sort By:
@@ -512,7 +684,6 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* Sub-Filter Tabs for Food Orders */}
           {mainSection === "food" && (
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
               {[
@@ -525,11 +696,10 @@ export default function OrdersPage() {
                 <button
                   key={tab.id}
                   onClick={() => setFoodTab(tab.id)}
-                  className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
-                    foodTab === tab.id
-                      ? "bg-zinc-900 text-white shadow-xs"
-                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                  }`}
+                  className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${foodTab === tab.id
+                    ? "bg-zinc-900 text-white shadow-xs"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -537,7 +707,6 @@ export default function OrdersPage() {
             </div>
           )}
 
-          {/* Sub-Filter Tabs for Dining Orders */}
           {mainSection === "dining" && (
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
               {[
@@ -550,11 +719,10 @@ export default function OrdersPage() {
                 <button
                   key={tab.id}
                   onClick={() => setDiningTab(tab.id)}
-                  className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
-                    diningTab === tab.id
-                      ? "bg-zinc-900 text-white shadow-xs"
-                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                  }`}
+                  className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${diningTab === tab.id
+                    ? "bg-zinc-900 text-white shadow-xs"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -577,8 +745,8 @@ export default function OrdersPage() {
                 {searchQuery
                   ? `No matching records found for "${searchQuery}". Try a different keyword.`
                   : mainSection === "food"
-                  ? "You don't have any food delivery or takeaway orders in this category yet."
-                  : "You don't have any dining table orders or reservations in this category yet."}
+                    ? "You don't have any food delivery or takeaway orders in this category yet."
+                    : "You don't have any dining table orders or reservations in this category yet."}
               </p>
             </div>
             <div className="pt-2 flex items-center justify-center gap-2.5 sm:gap-3">
@@ -605,7 +773,7 @@ export default function OrdersPage() {
         ) : (
           <div className="space-y-4 sm:space-y-5">
             {displayItems.map((item) => (
-              <div key={item.id} id={`order-${item.id}`}>
+              <div key={`${item._cardType}-${item.id}`} id={`order-${item.id}`}>
                 <HistoryCard
                   type={item._cardType}
                   item={item}
@@ -614,7 +782,7 @@ export default function OrdersPage() {
                   onOpenInvoice={setInvoiceOrder}
                   onOpenRating={handleOpenRating}
                   onOpenHelp={setHelpOrder}
-                  onCancelReservation={cancelReservation}
+                  onCancelReservation={handleCancelReservation}
                   onBookAgain={() => router.push("/reserve")}
                 />
               </div>
@@ -623,13 +791,10 @@ export default function OrdersPage() {
         )}
       </div>
 
-      {/* ====================================================
-          TAX INVOICE MODAL
-      ==================================================== */}
+      {/* TAX INVOICE MODAL */}
       {invoiceOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-zinc-200">
-            {/* Modal Header */}
             <div className="p-4 sm:p-5 bg-zinc-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
@@ -643,7 +808,6 @@ export default function OrdersPage() {
               </button>
             </div>
 
-            {/* Printable Invoice / Voucher Body */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 text-xs sm:text-sm text-zinc-700">
               {/* Restaurant Header */}
               <div className="text-center pb-3.5 sm:pb-4 border-b border-zinc-200 space-y-1">
@@ -667,7 +831,9 @@ export default function OrdersPage() {
                   <span className="text-zinc-400 block text-[9px] sm:text-[10px]">
                     {invoiceOrder.type === "reservation" ? "Voucher / Ref ID:" : "Invoice Number:"}
                   </span>
-                  <span className="font-mono font-bold text-zinc-900 text-xs sm:text-sm">{invoiceOrder.id}</span>
+                  <span className="font-mono font-bold text-zinc-900 text-xs sm:text-sm">
+                    {invoiceOrder.displayId || invoiceOrder.id}
+                  </span>
                 </div>
                 <div>
                   <span className="text-zinc-400 block text-[9px] sm:text-[10px]">Date &amp; Time:</span>
@@ -678,10 +844,10 @@ export default function OrdersPage() {
                     {invoiceOrder.type === "reservation" ? "Reserved For:" : "Billed To:"}
                   </span>
                   <span className="font-bold text-zinc-900 text-xs sm:text-sm">
-                    {invoiceOrder.guestName || userProfile?.name || "Ishaan Sharma"}
+                    {invoiceOrder.guestName || invoiceOrder.user?.name || userProfile?.name || "Guest"}
                   </span>
                   <p className="text-[10px] sm:text-xs text-zinc-500 truncate">
-                    {invoiceOrder.deliveryAddress || "42 Flavor Street, Manhattan, NY"}
+                    {invoiceOrder.deliveryAddress || "—"}
                   </p>
                 </div>
               </div>
@@ -698,11 +864,13 @@ export default function OrdersPage() {
                       <div>
                         <p className="font-bold text-zinc-900">{invoiceOrder.zone || "Dining Hall"}</p>
                         <p className="text-[10px] sm:text-xs text-zinc-400">
-                          {invoiceOrder.guests || 2} Guests Cover @ ${invoiceOrder.coverPricePerGuest || 20}/cover
+                          {invoiceOrder.guests || 2} Guests Cover @ {CUR}
+                          {invoiceOrder.coverPricePerGuest || 20}/cover
                         </p>
                       </div>
                       <span className="font-mono font-bold text-zinc-900">
-                        ${((invoiceOrder.guests || 2) * (invoiceOrder.coverPricePerGuest || 20)).toFixed(2)}
+                        {CUR}
+                        {((invoiceOrder.guests || 2) * (invoiceOrder.coverPricePerGuest || 20)).toFixed(2)}
                       </span>
                     </div>
 
@@ -715,7 +883,8 @@ export default function OrdersPage() {
                           </p>
                         </div>
                         <span className="font-mono font-bold text-zinc-900">
-                          +${invoiceOrder.addOnTotal?.toFixed(2)}
+                          +{CUR}
+                          {invoiceOrder.addOnTotal?.toFixed(2)}
                         </span>
                       </div>
                     )}
@@ -733,11 +902,13 @@ export default function OrdersPage() {
                         <div>
                           <p className="font-bold text-zinc-900">{it.title}</p>
                           <p className="text-[10px] sm:text-xs text-zinc-400">
-                            {it.quantity} x ${it.price.toFixed(2)}
+                            {it.quantity} x {CUR}
+                            {it.price.toFixed(2)}
                           </p>
                         </div>
                         <span className="font-mono font-bold text-zinc-900">
-                          ${(it.price * it.quantity).toFixed(2)}
+                          {CUR}
+                          {(it.price * it.quantity).toFixed(2)}
                         </span>
                       </div>
                     ))}
@@ -751,44 +922,69 @@ export default function OrdersPage() {
                   <>
                     <div className="flex justify-between">
                       <span>Hospitality Taxes:</span>
-                      <span className="font-mono">${invoiceOrder.taxes?.toFixed(2) || "0.00"}</span>
+                      <span className="font-mono">
+                        {CUR}
+                        {invoiceOrder.taxes?.toFixed(2) || "0.00"}
+                      </span>
                     </div>
                     <div className="pt-2 border-t border-zinc-200 flex justify-between font-black text-xs sm:text-sm md:text-base text-zinc-900">
                       <span>Total Paid ({invoiceOrder.paymentMethod}):</span>
-                      <span className="text-rose-600 font-mono">${invoiceOrder.total?.toFixed(2)}</span>
+                      <span className="text-rose-600 font-mono">
+                        {CUR}
+                        {invoiceOrder.total?.toFixed(2)}
+                      </span>
                     </div>
                   </>
                 ) : (
                   <>
                     <div className="flex justify-between">
                       <span>Item Subtotal:</span>
-                      <span className="font-mono font-bold">${invoiceOrder.itemTotal?.toFixed(2)}</span>
+                      <span className="font-mono font-bold">
+                        {CUR}
+                        {invoiceOrder.itemTotal?.toFixed(2)}
+                      </span>
                     </div>
                     {invoiceOrder.discount > 0 && (
                       <div className="flex justify-between text-emerald-600 font-bold">
                         <span>Discount Savings:</span>
-                        <span className="font-mono">-${invoiceOrder.discount.toFixed(2)}</span>
+                        <span className="font-mono">
+                          -{CUR}
+                          {invoiceOrder.discount.toFixed(2)}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between">
                       <span>Delivery &amp; Packaging:</span>
                       <span className="font-mono">
-                        {invoiceOrder.deliveryFee === 0 ? "FREE" : `$${invoiceOrder.deliveryFee?.toFixed(2)}`}
+                        {invoiceOrder.deliveryFee === 0
+                          ? "FREE"
+                          : `${CUR}${invoiceOrder.deliveryFee?.toFixed(2)}`}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Restaurant GST &amp; Taxes (8.5%):</span>
-                      <span className="font-mono">${invoiceOrder.taxes?.toFixed(2)}</span>
-                    </div>
+                    {invoiceOrder.taxes > 0 && (
+                      <div className="flex justify-between">
+                        <span>GST &amp; Taxes:</span>
+                        <span className="font-mono">
+                          {CUR}
+                          {invoiceOrder.taxes?.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                     {invoiceOrder.tip > 0 && (
                       <div className="flex justify-between text-amber-600 font-bold">
                         <span>Rider Tip:</span>
-                        <span className="font-mono">+${invoiceOrder.tip?.toFixed(2)}</span>
+                        <span className="font-mono">
+                          +{CUR}
+                          {invoiceOrder.tip?.toFixed(2)}
+                        </span>
                       </div>
                     )}
                     <div className="pt-2 border-t border-zinc-200 flex justify-between font-black text-xs sm:text-sm md:text-base text-zinc-900">
                       <span>Total Paid ({invoiceOrder.paymentMethod}):</span>
-                      <span className="text-rose-600 font-mono">${invoiceOrder.total?.toFixed(2)}</span>
+                      <span className="text-rose-600 font-mono">
+                        {CUR}
+                        {invoiceOrder.total?.toFixed(2)}
+                      </span>
                     </div>
                   </>
                 )}
@@ -799,7 +995,6 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Modal Actions */}
             <div className="p-3.5 sm:p-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between shrink-0">
               <button
                 onClick={() => window.print()}
@@ -820,9 +1015,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ====================================================
-          RATING & REVIEW MODAL
-      ==================================================== */}
+      {/* RATING & REVIEW MODAL */}
       {ratingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl sm:rounded-3xl max-w-md w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-zinc-200">
@@ -842,14 +1035,11 @@ export default function OrdersPage() {
             <form onSubmit={handleSaveRating} className="p-4 sm:p-6 space-y-3.5 sm:space-y-4">
               <div className="text-center space-y-1">
                 <p className="text-[10px] sm:text-xs font-bold text-zinc-500 uppercase tracking-wider">
-                  Order: {ratingOrder.id}
+                  Order: {ratingOrder.displayId || ratingOrder.id}
                 </p>
-                <p className="text-xs sm:text-sm font-black text-zinc-900">
-                  How was the taste and freshness?
-                </p>
+                <p className="text-xs sm:text-sm font-black text-zinc-900">How was the taste and freshness?</p>
               </div>
 
-              {/* 5-Star Interactive Selector */}
               <div className="flex items-center justify-center gap-1.5 sm:gap-2 py-1 sm:py-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -859,17 +1049,13 @@ export default function OrdersPage() {
                     className="p-1 sm:p-1.5 transition-transform hover:scale-125 cursor-pointer"
                   >
                     <Star
-                      className={`w-7 h-7 sm:w-8 sm:h-8 ${
-                        star <= selectedRating
-                          ? "fill-amber-400 text-amber-400"
-                          : "text-zinc-200"
-                      }`}
+                      className={`w-7 h-7 sm:w-8 sm:h-8 ${star <= selectedRating ? "fill-amber-400 text-amber-400" : "text-zinc-200"
+                        }`}
                     />
                   </button>
                 ))}
               </div>
 
-              {/* Compliment Chips */}
               <div className="space-y-1.5">
                 <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 block text-center">
                   What did you love the most?
@@ -889,11 +1075,10 @@ export default function OrdersPage() {
                         key={tag}
                         type="button"
                         onClick={() => toggleRatingTag(tag)}
-                        className={`px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-rose-600 text-white shadow-xs scale-105"
-                            : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                        }`}
+                        className={`px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${isSelected
+                          ? "bg-rose-600 text-white shadow-xs scale-105"
+                          : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                          }`}
                       >
                         {tag}
                       </button>
@@ -902,10 +1087,11 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Custom Feedback Textarea */}
               <div className="space-y-1">
                 <textarea
                   rows="3"
+                  required={ratingOrder.type !== "reservation"}
+                  minLength={ratingOrder.type !== "reservation" ? 5 : undefined}
                   value={feedbackText}
                   onChange={(e) => setFeedbackText(e.target.value)}
                   placeholder="Share any special compliments for our Chef..."
@@ -919,6 +1105,17 @@ export default function OrdersPage() {
                   <span>Thank you for your rating!</span>
                 </p>
               )}
+              {commentRewardMessage && ratingSuccess && (
+                <p className="text-center text-xs font-bold text-amber-700">{commentRewardMessage}</p>
+              )}
+              {ratingOrder.type !== "reservation" && (
+                <p className="text-center text-[11px] font-semibold text-amber-800">
+                  Comment on this completed order to earn 5 CreditCoins. An assigned delivery partner earns 10.
+                </p>
+              )}
+              {ratingError && (
+                <p role="alert" className="text-center text-xs font-semibold text-red-600">{ratingError}</p>
+              )}
 
               <button
                 type="submit"
@@ -931,9 +1128,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ====================================================
-          HELP & SUPPORT / ORDER ISSUE RESOLUTION MODAL
-      ==================================================== */}
+      {/* HELP & SUPPORT MODAL */}
       {helpOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl sm:rounded-3xl max-w-md w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-zinc-200">
@@ -956,7 +1151,9 @@ export default function OrdersPage() {
                   <span className="text-[9px] sm:text-[10px] font-bold uppercase text-rose-600 tracking-wider">
                     {helpOrder.type === "reservation" ? "Table Booking Ref" : "Order Reference"}
                   </span>
-                  <p className="font-mono font-black text-xs sm:text-sm text-zinc-900">{helpOrder.id}</p>
+                  <p className="font-mono font-black text-xs sm:text-sm text-zinc-900">
+                    {helpOrder.displayId || helpOrder.id}
+                  </p>
                 </div>
                 <div className="text-right">
                   <span className="text-[9px] sm:text-[10px] font-bold text-zinc-400 block">Status</span>
@@ -964,7 +1161,6 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Select Issue Type */}
               <div className="space-y-1.5">
                 <label className="text-xs sm:text-sm font-bold text-zinc-700 block">
                   What can we help you with?
@@ -982,11 +1178,10 @@ export default function OrdersPage() {
                       key={issue.id}
                       type="button"
                       onClick={() => setHelpIssueType(issue.id)}
-                      className={`p-2 sm:p-2.5 rounded-xl text-left text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer ${
-                        helpIssueType === issue.id
-                          ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                          : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100"
-                      }`}
+                      className={`p-2 sm:p-2.5 rounded-xl text-left text-[10px] sm:text-[11px] font-bold border transition-all cursor-pointer ${helpIssueType === issue.id
+                        ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                        : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100"
+                        }`}
                     >
                       {issue.label}
                     </button>
@@ -994,11 +1189,8 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {/* Message */}
               <div className="space-y-1">
-                <label className="text-xs sm:text-sm font-bold text-zinc-700 block">
-                  Describe your concern:
-                </label>
+                <label className="text-xs sm:text-sm font-bold text-zinc-700 block">Describe your concern:</label>
                 <textarea
                   rows="3"
                   value={helpMessage}
@@ -1008,7 +1200,6 @@ export default function OrdersPage() {
                 />
               </div>
 
-              {/* Quick Contact Options */}
               <div className="pt-1 flex items-center gap-2">
                 <a
                   href="tel:+18007873834"
@@ -1028,7 +1219,7 @@ export default function OrdersPage() {
               {helpSuccess && (
                 <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] sm:text-xs font-bold text-center flex items-center justify-center gap-1.5 animate-in fade-in duration-200">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Ticket #TCK-{(Math.random() * 90000 + 10000).toFixed(0)} created! We are on it.</span>
+                  <span>Ticket #{ticketId} created! We are on it.</span>
                 </div>
               )}
             </form>
@@ -1038,4 +1229,3 @@ export default function OrdersPage() {
     </div>
   );
 }
-

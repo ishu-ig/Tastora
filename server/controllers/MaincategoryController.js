@@ -6,6 +6,10 @@ async function createRecord(req, res) {
         let data = new Maincategory(req.body)
         if (req.file) {
             data.pic = req.file.path
+        } else if (req.body.pic) {
+            data.pic = req.body.pic
+        } else if (req.body.picUrl) {
+            data.pic = req.body.picUrl
         }
         await data.save()
         res.send({
@@ -82,11 +86,21 @@ async function updateRecord(req, res) {
         if (data) {
             data.name = req.body.name ?? data.name
             data.active = req.body.active ?? data.active
-            if (await data.save() && req.file) {
-                await deleteFromCloudinary(data.pic);
+
+            const newPicUrl = req.body.picUrl || req.body.pic
+            if (req.file) {
+                if (data.pic && data.pic.includes("cloudinary")) {
+                    await deleteFromCloudinary(data.pic)
+                }
                 data.pic = req.file.path
-                await data.save()
+            } else if (newPicUrl && newPicUrl !== data.pic) {
+                if (data.pic && data.pic.includes("cloudinary")) {
+                    await deleteFromCloudinary(data.pic)
+                }
+                data.pic = newPicUrl
             }
+
+            await data.save()
             res.send({
                 result: "Done",
                 data: data

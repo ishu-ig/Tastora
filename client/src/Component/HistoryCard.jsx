@@ -43,6 +43,7 @@ import {
  * @param {Function} [props.onAddSingleDish] - Handler for adding a single dish to cart
  * @param {Function} [props.onOpenInvoice] - Handler for invoice modal (orders / reservations)
  * @param {Function} [props.onOpenRating] - Handler for rating modal
+ * @param {Function} [props.onOpenDeliveryRating] - Handler for delivery rating modal
  * @param {Function} [props.onOpenHelp] - Handler for order help/support modal
  * @param {Function} [props.onCancelReservation] - Handler for cancelling a reservation
  * @param {Function} [props.onBookAgain] - Handler for booking again
@@ -55,6 +56,7 @@ export default function HistoryCard({
   onAddSingleDish,
   onOpenInvoice,
   onOpenRating,
+  onOpenDeliveryRating,
   onOpenHelp,
   onCancelReservation,
   onBookAgain,
@@ -72,7 +74,7 @@ export default function HistoryCard({
   // Check if active / live
   const isLiveOrder =
     isOrder &&
-    (item.status === "In Kitchen" || item.status === "Confirmed" || item.status === "Picked Up");
+    (["Order is Placed", "Confirmed", "Preparing", "In Kitchen", "Packing", "Out for Delivery", "Picked Up"].includes(item.status));
   const isUpcomingReservation =
     isReservation && item.status === "Confirmed";
 
@@ -248,7 +250,11 @@ export default function HistoryCard({
               {/* Textual Dish List Summary */}
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm font-bold text-zinc-900 truncate">
-                  {item.items?.map((it) => `${it.quantity}x ${it.title}`).join(", ")}
+                  {item.items?.map((it) => {
+                    const title = typeof it === "string" ? it : (it.title || it.name || it.customName || it.product?.name || "Dish");
+                    const q = it.quantity || it.qty || 1;
+                    return `${q}x ${title}`;
+                  }).join(", ")}
                 </p>
                 <p className="text-[10px] sm:text-xs text-zinc-500 mt-0.5">
                   {item.items?.length || 0} {item.items?.length === 1 ? "dish" : "dishes"} • 100% Satvik Pure Veg
@@ -396,7 +402,7 @@ export default function HistoryCard({
           )}
 
           {/* Rate Button if Delivered and Unrated */}
-          {!item.ratingGiven &&
+          {!item.ratingGiven && !item.commentRewarded &&
             (item.status === "Delivered" || item.status === "Completed") &&
             onOpenRating && (
               <button
@@ -406,6 +412,19 @@ export default function HistoryCard({
               >
                 <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                 <span>Rate</span>
+              </button>
+            )}
+
+          {isOrder && item.deliveryBoyAssigned && !item.deliveryRating && !item.deliveryRatingRewarded &&
+            (item.status === "Delivered" || item.status === "Completed") &&
+            onOpenDeliveryRating && (
+              <button
+                type="button"
+                onClick={() => onOpenDeliveryRating(item)}
+                className="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Bike className="w-3.5 h-3.5 text-sky-600" />
+                <span>Rate delivery</span>
               </button>
             )}
         </div>

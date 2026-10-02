@@ -50,6 +50,16 @@ UserRouter.get("/", verifyAdmin, getRecord);
 UserRouter.get("/:_id", verifyThree, getSingleRecord);
 
 UserRouter.put(
+    "/update",
+    verifyThree,
+    userUploader.single("pic"),
+    (req, res, next) => {
+        req.params._id = req.user?._id || req.body._id || req.body.id;
+        return UpdateRecord(req, res);
+    }
+);
+
+UserRouter.put(
     "/:_id",
     verifyThree,
     userUploader.single("pic"),

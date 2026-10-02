@@ -1,7 +1,12 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useDispatch, useSelector, shallowEqual } from "react-redux";
+import { getMaincategory } from "@/Redux/ActionCreators/MaincategoryActionCreators";
+import { getSubcategory } from "@/Redux/ActionCreators/SubcategoryActionCreators";
+import { getProduct } from "@/Redux/ActionCreators/ProductActionCreators";
 import {
   Search,
   Filter,
@@ -28,12 +33,25 @@ import {
   Tag,
   DollarSign,
   Loader2,
+  AlertTriangle,
+  RefreshCw,
+  Info,
 } from "lucide-react";
+import { Menucard } from "@/Component/MenuCard";
+import { Addtocart } from "@/Component/AddToCart";
+import QtyStepper from "@/Component/QtyStepper";
+import { CartAddedPopup } from "@/Component/Cartaddedpoup";
+import useCartWishlist from "@/hooks/useCartWishlist";
+import { mapProductToDish, rupee } from "@/lib/MenuDish";
 
 // ==========================================
-// 1. COMPREHENSIVE PURE VEG MENU DATABASE
+// 1. STATIC PREVIEW CATALOG
+// This is NOT live data. It exists purely so the page has something
+// sensible to render before the backend has been seeded, or if the
+// Redux fetch genuinely comes back empty. It is never merged with real
+// product data from the store — see `allDishes` below.
 // ==========================================
-export const fullMenuCatalog = [
+const rawMenuCatalog = [
   // --- NORTH INDIAN: PANEER SPECIALS ---
   {
     id: "ni-1",
@@ -862,9 +880,24 @@ export const fullMenuCatalog = [
   },
 ];
 
+export const fullMenuCatalog = [];
+
 // ==========================================
-// 2. CATEGORY DEFINITIONS & SUBCATEGORIES TREE
+// 2. CATEGORY DEFINITIONS & SUBCATEGORIES TREE (STATIC PREVIEW)
 // ==========================================
+export const CATEGORY_META = {
+  "Fast Food": { emoji: "🍔" },
+  "South Indian": { emoji: "🥞" },
+  "North Indian": { emoji: "🍛" },
+  "Chinese & Asian": { emoji: "🥢" },
+  "Italian & Continental": { emoji: "🍕" },
+  "Biryani & Rice Bowls": { emoji: "🍚" },
+  "Desserts & Bakery": { emoji: "🍰" },
+  "Beverages & Shakes": { emoji: "🥤" },
+  "Street Food & Chaat": { emoji: "🫓" },
+  "Healthy & Diet Food": { emoji: "🥗" },
+};
+
 export const categoryTree = {
   all: {
     name: "All Categories",
@@ -873,27 +906,7 @@ export const categoryTree = {
       { id: "all", name: "All Items" },
       { id: "bestsellers", name: "⭐ Bestsellers" },
       { id: "chef-special", name: "👑 Chef Specials" },
-      { id: "under-12", name: "⚡ Budget Picks (<$12)" },
-    ],
-  },
-  "north-indian": {
-    name: "North Indian",
-    icon: "🍛",
-    subcategories: [
-      { id: "all", name: "All North Indian" },
-      { id: "paneer", name: "Paneer Specials" },
-      { id: "dal", name: "Dal & Lentils" },
-      { id: "rice-biryani", name: "Biryani & Rice" },
-      { id: "tandoori-breads", name: "Tandoori Breads" },
-    ],
-  },
-  "south-indian": {
-    name: "South Indian",
-    icon: "🥞",
-    subcategories: [
-      { id: "all", name: "All South Indian" },
-      { id: "dosa", name: "Crispy Dosas" },
-      { id: "idli-vada", name: "Idli & Vada" },
+      { id: "under-100", name: "⚡ Budget Picks (<₹100)" },
     ],
   },
   "fast-food": {
@@ -901,79 +914,414 @@ export const categoryTree = {
     icon: "🍔",
     subcategories: [
       { id: "all", name: "All Fast Food" },
-      { id: "burgers", name: "Smash Burgers" },
-      { id: "pizza", name: "Artisan Pizzas" },
-      { id: "pasta", name: "Gourmet Pasta" },
+      { id: "burger", name: "Burger" },
+      { id: "french-fries-sides", name: "French Fries & Sides" },
+      { id: "sandwiches-subs", name: "Sandwiches & Subs" },
+      { id: "crispy-fried-chicken", name: "Crispy Fried Chicken" },
+    ],
+  },
+  "south-indian": {
+    name: "South Indian",
+    icon: "🥞",
+    subcategories: [
+      { id: "all", name: "All South Indian" },
+      { id: "crispy-dosa", name: "Crispy Dosa" },
+      { id: "idli-medu-vada", name: "Idli & Medu Vada" },
+      { id: "uttapam-appam", name: "Uttapam & Appam" },
+      { id: "south-indian-thali", name: "South Indian Thali" },
+    ],
+  },
+  "north-indian": {
+    name: "North Indian",
+    icon: "🍛",
+    subcategories: [
+      { id: "all", name: "All North Indian" },
+      { id: "paneer-specialties", name: "Paneer Specialties" },
+      { id: "dal-makhani-curries", name: "Dal Makhani & Curries" },
+      { id: "tandoori-roti-naan", name: "Tandoori Roti & Naan" },
+      { id: "north-indian-deluxe-thali", name: "North Indian Deluxe Thali" },
     ],
   },
   chinese: {
-    name: "Indo-Chinese",
+    name: "Chinese & Asian",
     icon: "🥢",
     subcategories: [
-      { id: "all", name: "All Chinese" },
-      { id: "noodles", name: "Hakka Noodles" },
-      { id: "manchurian", name: "Chilli & Manchurian" },
+      { id: "all", name: "All Chinese & Asian" },
+      { id: "hakka-noodles-chowmein", name: "Hakka Noodles & Chowmein" },
+      { id: "steamed-momos-dim-sum", name: "Steamed Momos & Dim Sum" },
+      { id: "fried-rice-bowls", name: "Fried Rice & Bowls" },
+      { id: "manchurian-chilli-gravy", name: "Manchurian & Chilli Gravy" },
     ],
   },
-  "street-food": {
-    name: "Street Food",
-    icon: "🫓",
+  "italian-continental": {
+    name: "Italian & Continental",
+    icon: "🍕",
     subcategories: [
-      { id: "all", name: "All Street Food" },
-      { id: "mumbai-special", name: "Mumbai Pav Bhaji" },
-      { id: "delhi-chaat", name: "Amritsari Chole" },
+      { id: "all", name: "All Italian & Continental" },
+      { id: "gourmet-pizzas", name: "Gourmet Pizzas" },
+      { id: "creamy-red-sauce-pastas", name: "Creamy & Red Sauce Pastas" },
+      { id: "garlic-breads-bruschetta", name: "Garlic Breads & Bruschetta" },
+      { id: "baked-lasagna-risotto", name: "Baked Lasagna & Risotto" },
     ],
   },
-  "thali-combos": {
-    name: "Thali & Combos",
-    icon: "🍱",
+  "biryani-rice-bowls": {
+    name: "Biryani & Rice Bowls",
+    icon: "🍚",
     subcategories: [
-      { id: "all", name: "All Combos" },
-      { id: "royal-thalis", name: "Royal Maharaja Thalis" },
-      { id: "lunch-combos", name: "Executive Lunch Combos" },
-      { id: "regional-platters", name: "Regional Specialties" },
-      { id: "street-food-combos", name: "Street Food Combos" },
-      { id: "family-feasts", name: "Family Feasts (3-4 Servings)" },
+      { id: "all", name: "All Biryani & Rice Bowls" },
+      { id: "hyderabadi-dum-biryani", name: "Hyderabadi Dum Biryani" },
+      { id: "kolkata-lucknowi-biryani", name: "Kolkata & Lucknowi Biryani" },
+      { id: "pulao-jeera-rice", name: "Pulao & Jeera Rice" },
+      { id: "seekh-kebabs-tikka", name: "Seekh Kebabs & Tikka" },
     ],
   },
   desserts: {
-    name: "Desserts",
-    icon: "🍯",
+    name: "Desserts & Bakery",
+    icon: "🍰",
     subcategories: [
-      { id: "all", name: "All Desserts" },
-      { id: "traditional-sweets", name: "Traditional Sweets" },
-      { id: "gourmet-cakes", name: "Gourmet Lava Cakes" },
+      { id: "all", name: "All Desserts & Bakery" },
+      { id: "cakes-pastries", name: "Cakes & Pastries" },
+      { id: "ice-creams-sundaes", name: "Ice Creams & Sundaes" },
+      { id: "waffles-brownies", name: "Waffles & Brownies" },
+      { id: "gulab-jamun-sweets", name: "Gulab Jamun & Sweets" },
     ],
   },
   beverages: {
-    name: "Beverages",
+    name: "Beverages & Shakes",
     icon: "🥤",
     subcategories: [
-      { id: "all", name: "All Beverages" },
-      { id: "creamy-lassis", name: "Creamy Lassis" },
-      { id: "milkshakes", name: "Mango Shakes" },
-      { id: "hot-brews", name: "Kulhad Masala Chai" },
+      { id: "all", name: "All Beverages & Shakes" },
+      { id: "thick-milkshakes", name: "Thick Milkshakes" },
+      { id: "cold-coffee-frappe", name: "Cold Coffee & Frappe" },
+      { id: "fresh-fruit-juices", name: "Fresh Fruit Juices" },
+      { id: "refreshing-mocktails", name: "Refreshing Mocktails" },
+    ],
+  },
+  "street-food": {
+    name: "Street Food & Chaat",
+    icon: "🫓",
+    subcategories: [
+      { id: "all", name: "All Street Food & Chaat" },
+      { id: "pani-puri-gol-gappe", name: "Pani Puri & Gol Gappe" },
+      { id: "mumbai-pav-bhaji", name: "Mumbai Pav Bhaji" },
+      { id: "dahi-bhalla-papdi-chaat", name: "Dahi Bhalla & Papdi Chaat" },
+      { id: "kathi-rolls-frankies", name: "Kathi Rolls & Frankies" },
+    ],
+  },
+  "healthy-diet": {
+    name: "Healthy & Diet Food",
+    icon: "🥗",
+    subcategories: [
+      { id: "all", name: "All Healthy & Diet Food" },
+      { id: "fresh-garden-salads", name: "Fresh Garden Salads" },
+      { id: "high-protein-bowls", name: "High Protein Bowls" },
+      { id: "smoothie-acai-bowls", name: "Smoothie & Acai Bowls" },
+      { id: "fresh-fruit-platters", name: "Fresh Fruit Platters" },
     ],
   },
 };
 
 const priceRanges = [
-  { id: "all", label: "All Prices", min: 0, max: 999 },
-  { id: "under-10", label: "Under $10", min: 0, max: 10 },
-  { id: "10-15", label: "$10 – $15", min: 10, max: 15 },
-  { id: "15-20", label: "$15 – $20", min: 15, max: 20 },
-  { id: "above-20", label: "$20 & Above", min: 20, max: 999 },
+  { id: "all", label: "All Prices", min: 0, max: 999999 },
+  { id: "under-100", label: "Under ₹100", min: 0, max: 100 },
+  { id: "100-200", label: "₹100 – ₹200", min: 100, max: 200 },
+  { id: "200-300", label: "₹200 – ₹300", min: 200, max: 300 },
+  { id: "above-300", label: "₹300 & Above", min: 300, max: 999999 },
 ];
 
-export default function MenuPage() {
+// ==========================================
+// 3. REDUX SLICE NORMALIZER
+// Supports either a bare-array slice (state.XStateData = [...]) or a
+// {data/list/items, loading, error} slice, so the UI never has to guess
+// what shape the reducer actually returns.
+// ==========================================
+function normalizeSlice(slice) {
+  if (Array.isArray(slice)) {
+    return { data: slice, loading: false, error: null };
+  }
+  if (slice && typeof slice === "object") {
+    const data = Array.isArray(slice.data)
+      ? slice.data
+      : Array.isArray(slice.list)
+        ? slice.list
+        : Array.isArray(slice.items)
+          ? slice.items
+          : [];
+    return {
+      data,
+      loading: Boolean(slice.loading ?? slice.isLoading ?? slice.pending),
+      error: slice.error ?? slice.errorMessage ?? null,
+    };
+  }
+  return { data: [], loading: false, error: null };
+}
+
+// ==========================================
+// 4. LOADING SKELETON
+// ==========================================
+function SkeletonGrid({ viewMode }) {
+  const placeholders = Array.from({ length: 6 });
+
+  if (viewMode === "list") {
+    return (
+      <div className="space-y-4" aria-hidden="true">
+        {placeholders.map((_, i) => (
+          <div
+            key={i}
+            className="bg-white rounded-3xl p-4 sm:p-5 border border-zinc-200/80 shadow-sm flex flex-col sm:flex-row items-center gap-5 animate-pulse"
+          >
+            <div className="w-full sm:w-44 h-40 sm:h-36 rounded-2xl bg-zinc-100 shrink-0" />
+            <div className="flex-1 w-full space-y-2.5">
+              <div className="h-3 w-24 bg-zinc-100 rounded-full" />
+              <div className="h-4 w-2/3 bg-zinc-100 rounded-full" />
+              <div className="h-3 w-full bg-zinc-100 rounded-full" />
+              <div className="h-3 w-1/2 bg-zinc-100 rounded-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4 sm:gap-5"
+      aria-hidden="true"
+    >
+      {placeholders.map((_, i) => (
+        <div
+          key={i}
+          className="bg-white rounded-3xl border border-zinc-200/80 shadow-xs overflow-hidden animate-pulse"
+        >
+          <div className="w-full h-36 sm:h-44 bg-zinc-100" />
+          <div className="p-3 sm:p-4 space-y-2.5">
+            <div className="h-3 w-1/3 bg-zinc-100 rounded-full" />
+            <div className="h-4 w-4/5 bg-zinc-100 rounded-full" />
+            <div className="h-3 w-full bg-zinc-100 rounded-full" />
+            <div className="h-8 w-full bg-zinc-100 rounded-full mt-2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MenuPageContent() {
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const {
+    addToCart, updateQty, addToWishlist, isInCart, isInWishlist, getQty,
+    addedPopup, closeAddedPopup, clearCart, toast, cartCount, cartTotal,
+  } = useCartWishlist();
+
+  // ------------------------------------------
+  // REDUX: read the slices, normalize their shape, and derive
+  // loading / error state that the rest of the component can trust.
+  // ------------------------------------------
+  const mainCategorySlice = useSelector((state) => state.MaincategoryStateData, shallowEqual);
+  const subCategorySlice = useSelector((state) => state.SubcategoryStateData, shallowEqual);
+  const productSlice = useSelector((state) => state.ProductStateData, shallowEqual);
+
+  const {
+    data: rawMainCategories,
+    loading: mainCategoriesLoading,
+    error: mainCategoriesError,
+  } = normalizeSlice(mainCategorySlice);
+  const { data: rawSubCategories, loading: subCategoriesLoading } = normalizeSlice(subCategorySlice);
+  const {
+    data: rawProducts,
+    loading: productsLoading,
+    error: productsError,
+  } = normalizeSlice(productSlice);
+
+  const hasLoadError = Boolean(mainCategoriesError || productsError);
+
+  const fetchMenuData = () => {
+    dispatch(getMaincategory());
+    dispatch(getSubcategory());
+    dispatch(getProduct());
+  };
+
+  useEffect(() => {
+    fetchMenuData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]);
+
+  // Redux "loading" flags are trusted, but only for a short grace period.
+  // If a reducer never flips `loading` back to false (wrong field name,
+  // a missed success/failure action, a request that silently dies, etc.)
+  // this used to leave the page blank forever with zero dishes ever
+  // rendering — live or fallback. A hard timeout guarantees the page
+  // always resolves to *something* within ~1.2s even if Redux never
+  // reports itself as "done".
+  const [loadingGraceElapsed, setLoadingGraceElapsed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setLoadingGraceElapsed(true), 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const reduxReportsLoading = mainCategoriesLoading || subCategoriesLoading || productsLoading;
+  const hasAnyLiveData = rawMainCategories.length > 0 || rawProducts.length > 0;
+
+  // True only for the very first fetch, before any data has arrived, and
+  // only until the grace-period timeout fires.
+  const isInitialLoading = !hasAnyLiveData && reduxReportsLoading && !loadingGraceElapsed;
+
+  // Offline / backend-missing states should stay empty rather than show preview data.
+  const usingPreviewCatalog = false;
+
+  // Dynamically constructed Category Tree from backend data only.
+  const dynamicCategoryTree = useMemo(() => {
+    if (isInitialLoading) {
+      return {
+        all: {
+          id: "all",
+          _id: "all",
+          name: "All",
+          icon: "🍽️",
+          subcategories: [{ id: "all", name: "All Dishes" }],
+        },
+      };
+    }
+
+    if (rawMainCategories.length === 0 && rawProducts.length === 0) {
+      return {
+        all: {
+          id: "all",
+          _id: "all",
+          name: "All",
+          icon: "🍽️",
+          subcategories: [{ id: "all", name: "All Dishes" }],
+        },
+      };
+    }
+
+    const mains = rawMainCategories.filter((m) => m.active !== false);
+    const subs = rawSubCategories.filter((s) => s.active !== false);
+
+    const tree = {
+      all: categoryTree.all,
+    };
+
+    mains.forEach((main) => {
+      const meta = CATEGORY_META[main.name] || {};
+      const childSubs = subs.filter((s) => {
+        const parentId = s.maincategory?._id || s.maincategory;
+        return String(parentId) === String(main._id);
+      });
+
+      tree[main.name] = {
+        id: main.name,
+        _id: main._id,
+        name: main.name,
+        icon: meta.emoji || "🍽️",
+        subcategories: [
+          { id: "all", name: `All ${main.name}` },
+          ...childSubs.map((s) => ({
+            id: s.name,
+            _id: s._id,
+            name: s.name,
+            icon: "🍴",
+          })),
+        ],
+      };
+    });
+
+    return tree;
+  }, [rawMainCategories, rawSubCategories, isInitialLoading, usingPreviewCatalog]);
+
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get("category") || searchParams.get("maincategory") || searchParams.get("cat");
+  const subcategoryParam = searchParams.get("subcategory") || searchParams.get("sub");
+  const searchQuery = searchParams.get("search") || "";
+
   // ------------------------------------------
   // FILTER STATES
   // ------------------------------------------
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedMainCat, setSelectedMainCat] = useState("all");
   const [selectedSubCat, setSelectedSubCat] = useState("all");
+
+  // Automatically select maincategory and subcategory when URL search parameters change
+  useEffect(() => {
+    if (!categoryParam && !subcategoryParam) return;
+
+    const catQuery = (categoryParam || "").toLowerCase().trim();
+    const subQuery = (subcategoryParam || "").toLowerCase().trim();
+    const clean = (str) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    let matchedMainKey = null;
+
+    // 1. Identify Main Category
+    if (catQuery) {
+      for (const [key, val] of Object.entries(dynamicCategoryTree)) {
+        if (key === "all") continue;
+        const kClean = clean(key);
+        const nameClean = clean(val.name);
+        const qClean = clean(catQuery);
+
+        if (
+          kClean === qClean ||
+          nameClean === qClean ||
+          nameClean.includes(qClean) ||
+          qClean.includes(nameClean) ||
+          (val._id && String(val._id).toLowerCase() === catQuery)
+        ) {
+          matchedMainKey = key;
+          break;
+        }
+      }
+    }
+
+    // If maincategory is omitted, infer it from the subcategory
+    if (!matchedMainKey && subQuery) {
+      const sqClean = clean(subQuery);
+      for (const [key, val] of Object.entries(dynamicCategoryTree)) {
+        if (key === "all") continue;
+        const hasSub = val.subcategories?.some((s) => {
+          if (s.id === "all") return false;
+          const sClean = clean(s.name || s.id);
+          return sClean === sqClean || sClean.includes(sqClean) || sqClean.includes(sClean);
+        });
+        if (hasSub) {
+          matchedMainKey = key;
+          break;
+        }
+      }
+    }
+
+    if (matchedMainKey) {
+      setSelectedMainCat(matchedMainKey);
+
+      // 2. Identify Subcategory within the matched Main Category
+      if (subQuery && dynamicCategoryTree[matchedMainKey]?.subcategories) {
+        const sqClean = clean(subQuery);
+        const matchedSub = dynamicCategoryTree[matchedMainKey].subcategories.find((s) => {
+          if (s.id === "all") return false;
+          const sNameClean = clean(s.name);
+          const sIdClean = clean(s.id);
+          const sDbId = (s._id || "").toString().toLowerCase();
+
+          return (
+            sIdClean === sqClean ||
+            sNameClean === sqClean ||
+            sDbId === subQuery ||
+            sNameClean.includes(sqClean) ||
+            sqClean.includes(sNameClean)
+          );
+        });
+
+        if (matchedSub) {
+          setSelectedSubCat(matchedSub.id);
+        } else {
+          setSelectedSubCat("all");
+        }
+      } else {
+        setSelectedSubCat("all");
+      }
+    }
+  }, [categoryParam, subcategoryParam, dynamicCategoryTree]);
   const [selectedPriceTier, setSelectedPriceTier] = useState("all");
-  const [maxPriceSlider, setMaxPriceSlider] = useState(30);
+  const [maxPriceSlider, setMaxPriceSlider] = useState(1000);
   const [sortBy, setSortBy] = useState("featured");
   const [viewMode, setViewMode] = useState("grid");
 
@@ -986,9 +1334,6 @@ export default function MenuPage() {
   // UI / Modal / Cart States
   const [mobileFilterDrawerOpen, setMobileFilterDrawerOpen] = useState(false);
   const [quickViewDish, setQuickViewDish] = useState(null);
-  const [cartItems, setCartItems] = useState({});
-  const [favorites, setFavorites] = useState({});
-  const [addedToast, setAddedToast] = useState(null);
 
   // Pagination & Automatic Infinite Scroll States (Show 12 items initially)
   const [visibleCount, setVisibleCount] = useState(12);
@@ -1001,13 +1346,43 @@ export default function MenuPage() {
     setSelectedSubCat("all");
   };
 
+  // Map Redux backend products into unified dish format
+  const liveDishes = useMemo(() => {
+    if (!Array.isArray(rawProducts) || rawProducts.length === 0) return [];
+    return rawProducts.filter((p) => p.active !== false).map(mapProductToDish);
+  }, [rawProducts]);
+
+  // Offline/no-backend states should not render dummy product data.
+  const usingPreviewDishes = !isInitialLoading && liveDishes.length === 0;
+
+  const allDishes = useMemo(() => {
+    return liveDishes;
+  }, [liveDishes]);
+
+  // Compute maximum available price ceiling dynamically from dishes
+  const maxAvailablePrice = useMemo(() => {
+    if (!allDishes || allDishes.length === 0) return 1000;
+    const maxVal = Math.max(...allDishes.map((d) => Number(d.price) || 0));
+    return Math.max(500, Math.ceil((maxVal * 1.25) / 50) * 50);
+  }, [allDishes]);
+
+  // Auto-sync initial slider ceiling to max available price
+  useEffect(() => {
+    if (maxAvailablePrice > 0 && maxPriceSlider < maxAvailablePrice && maxPriceSlider <= 30) {
+      setMaxPriceSlider(maxAvailablePrice);
+    }
+  }, [maxAvailablePrice, maxPriceSlider]);
+
   // Reset all filters
   const resetAllFilters = () => {
-    setSearchQuery("");
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("search");
+    const query = params.toString();
+    router.replace(query ? `/menu?${query}` : "/menu", { scroll: false });
     setSelectedMainCat("all");
     setSelectedSubCat("all");
     setSelectedPriceTier("all");
-    setMaxPriceSlider(30);
+    setMaxPriceSlider(maxAvailablePrice);
     setDietaryJain(false);
     setDietaryGF(false);
     setDietaryChef(false);
@@ -1021,7 +1396,7 @@ export default function MenuPage() {
     if (selectedMainCat !== "all") count++;
     if (selectedSubCat !== "all") count++;
     if (selectedPriceTier !== "all") count++;
-    if (maxPriceSlider < 30) count++;
+    if (maxPriceSlider < maxAvailablePrice) count++;
     if (dietaryJain) count++;
     if (dietaryGF) count++;
     if (dietaryChef) count++;
@@ -1033,6 +1408,7 @@ export default function MenuPage() {
     selectedSubCat,
     selectedPriceTier,
     maxPriceSlider,
+    maxAvailablePrice,
     dietaryJain,
     dietaryGF,
     dietaryChef,
@@ -1044,43 +1420,84 @@ export default function MenuPage() {
   // FILTERING AND SORTING ENGINE
   // ------------------------------------------
   const filteredDishes = useMemo(() => {
-    return fullMenuCatalog
+    return allDishes
       .filter((dish) => {
         // Search Query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          const matchTitle = dish.title.toLowerCase().includes(q);
-          const matchDesc = dish.shortDesc.toLowerCase().includes(q) || dish.fullDesc.toLowerCase().includes(q);
-          const matchIng = dish.ingredients.some((ing) => ing.toLowerCase().includes(q));
+          const matchTitle = (dish.title || "").toLowerCase().includes(q);
+          const matchDesc =
+            (dish.shortDesc || "").toLowerCase().includes(q) ||
+            (dish.fullDesc || "").toLowerCase().includes(q);
+          const matchIng = (dish.ingredients || []).some((ing) => (ing || "").toLowerCase().includes(q));
           if (!matchTitle && !matchDesc && !matchIng) return false;
         }
 
+        const clean = (str) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
         // Main Category
-        if (selectedMainCat !== "all" && dish.mainCategory !== selectedMainCat) {
-          return false;
+        if (selectedMainCat !== "all") {
+          const targetCat = dynamicCategoryTree[selectedMainCat]?.name || selectedMainCat;
+          const dishCat = dish.mainCategory || "";
+          const tcClean = clean(targetCat);
+          const dcClean = clean(dishCat);
+
+          const mainMatch =
+            dish.mainCategory === selectedMainCat ||
+            dish.mainCategoryId === selectedMainCat ||
+            (tcClean && dcClean && (dcClean === tcClean || dcClean.includes(tcClean) || tcClean.includes(dcClean)));
+
+          if (!mainMatch) return false;
         }
 
         // Sub Category
         if (selectedSubCat !== "all") {
           if (selectedMainCat === "all") {
-            if (selectedSubCat === "bestsellers" && !dish.isBestseller) return false;
-            if (selectedSubCat === "chef-special" && !dish.isChefSpecial) return false;
-            if (selectedSubCat === "under-12" && dish.price >= 12) return false;
+            if (selectedSubCat === "bestsellers") {
+              if (!dish.isBestseller) return false;
+            } else if (selectedSubCat === "chef-special") {
+              if (!dish.isChefSpecial) return false;
+            } else if (selectedSubCat === "under-100" || selectedSubCat === "under-12") {
+              if (Number(dish.price) >= 100) return false;
+            } else {
+              const tsClean = clean(selectedSubCat);
+              const dsClean = clean(dish.subCategory || "");
+              const subMatch =
+                dish.subCategory === selectedSubCat ||
+                dish.subCategoryId === selectedSubCat ||
+                (tsClean && dsClean && (dsClean === tsClean || dsClean.includes(tsClean) || tsClean.includes(dsClean)));
+              if (!subMatch) return false;
+            }
           } else {
-            if (dish.subCategory !== selectedSubCat) return false;
+            const targetSub =
+              dynamicCategoryTree[selectedMainCat]?.subcategories?.find(
+                (s) => s.id === selectedSubCat
+              )?.name || selectedSubCat;
+            const dishSub = dish.subCategory || "";
+            const tsClean = clean(targetSub);
+            const dsClean = clean(dishSub);
+
+            const subMatch =
+              dish.subCategory === selectedSubCat ||
+              dish.subCategoryId === selectedSubCat ||
+              (tsClean && dsClean && (dsClean === tsClean || dsClean.includes(tsClean) || tsClean.includes(dsClean)));
+
+            if (!subMatch) return false;
           }
         }
+
+        const dishPrice = Number(dish.price) || 0;
 
         // Price Tier
         if (selectedPriceTier !== "all") {
           const tier = priceRanges.find((t) => t.id === selectedPriceTier);
-          if (tier && (dish.price < tier.min || dish.price > tier.max)) {
+          if (tier && (dishPrice < tier.min || dishPrice > tier.max)) {
             return false;
           }
         }
 
         // Price Slider (ceiling)
-        if (dish.price > maxPriceSlider) {
+        if (dishPrice > maxPriceSlider) {
           return false;
         }
 
@@ -1097,16 +1514,21 @@ export default function MenuPage() {
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === "price-low") return a.price - b.price;
-        if (sortBy === "price-high") return b.price - a.price;
-        if (sortBy === "rating") return b.rating - a.rating;
-        if (sortBy === "prep-time") return parseInt(a.prepTime) - parseInt(b.prepTime);
+        const aPrice = Number(a.price) || 0;
+        const bPrice = Number(b.price) || 0;
+        const aRating = Number(a.rating) || 0;
+        const bRating = Number(b.rating) || 0;
+        if (sortBy === "price-low") return aPrice - bPrice;
+        if (sortBy === "price-high") return bPrice - aPrice;
+        if (sortBy === "rating") return bRating - aRating;
+        if (sortBy === "prep-time") return (parseInt(a.prepTime) || 0) - (parseInt(b.prepTime) || 0);
         // default "featured"
         if (a.isChefSpecial && !b.isChefSpecial) return -1;
         if (!a.isChefSpecial && b.isChefSpecial) return 1;
-        return b.rating - a.rating;
+        return bRating - aRating;
       });
   }, [
+    allDishes,
     searchQuery,
     selectedMainCat,
     selectedSubCat,
@@ -1117,6 +1539,7 @@ export default function MenuPage() {
     dietaryChef,
     selectedSpice,
     sortBy,
+    dynamicCategoryTree,
   ]);
 
   // Reset pagination when search or filters change
@@ -1162,41 +1585,11 @@ export default function MenuPage() {
     };
   }, [visibleCount, filteredDishes.length, isLoadingMore]);
 
-  // Cart operations
-  const updateQuantity = (id, delta, dish) => {
-    setCartItems((prev) => {
-      const current = prev[id] || 0;
-      const next = Math.max(0, current + delta);
-      if (next === 0) {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
-      }
-      return { ...prev, [id]: next };
-    });
-
-    if (delta > 0 && dish) {
-      setAddedToast(dish.title);
-      setTimeout(() => setAddedToast(null), 2500);
-    }
-  };
-
-  const toggleFavorite = (id) => {
-    setFavorites((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Cart stats
-  const totalCartCount = Object.values(cartItems).reduce((sum, q) => sum + q, 0);
-  const totalCartAmount = Object.entries(cartItems).reduce((sum, [id, qty]) => {
-    const item = fullMenuCatalog.find((d) => d.id === id);
-    return sum + (item ? item.price * qty : 0);
-  }, 0);
-
   // Available Subcategories based on active main category
-  const activeSubcategories = categoryTree[selectedMainCat]?.subcategories || [];
+  const activeSubcategories = dynamicCategoryTree[selectedMainCat]?.subcategories || [];
 
   return (
-    <div className="min-h-screen bg-zinc-50/70 text-zinc-900 pt-24 pb-20">
+    <div className="min-h-screen bg-zinc-50/70 text-zinc-900 pt-32 sm:pt-36 lg:pt-40 pb-24 selection:bg-rose-500 selection:text-white">
       {/* ------------------------------------------
           HERO BANNER & SEARCH BAR (Clean, Airy & Spacious)
       ------------------------------------------ */}
@@ -1225,25 +1618,6 @@ export default function MenuPage() {
               </p>
             </div>
 
-            {/* In-Menu Search Input */}
-            <div className="w-full lg:w-96 relative">
-              <Search className="w-4 h-4 text-rose-500 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search paneer, dosa, burger, thali..."
-                className="w-full pl-11 pr-10 py-3 rounded-2xl bg-white border border-zinc-200 shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 placeholder-zinc-400 text-zinc-900 transition-all"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-200 transition-colors cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
           </div>
 
           {/* MOBILE TOOLBAR (Filter trigger, counts & sorting for mobile screens) */}
@@ -1259,9 +1633,15 @@ export default function MenuPage() {
               </button>
 
               <p className="text-xs font-bold text-zinc-800">
-                Showing <span className="text-rose-600 font-extrabold">{Math.min(visibleCount, filteredDishes.length)}</span> of{" "}
-                <span className="text-zinc-900 font-extrabold">{filteredDishes.length}</span>{" "}
-                {filteredDishes.length === 1 ? "dish" : "dishes"}
+                {isInitialLoading ? (
+                  "Loading menu…"
+                ) : (
+                  <>
+                    Showing <span className="text-rose-600 font-extrabold">{Math.min(visibleCount, filteredDishes.length)}</span> of{" "}
+                    <span className="text-zinc-900 font-extrabold">{filteredDishes.length}</span>{" "}
+                    {filteredDishes.length === 1 ? "dish" : "dishes"}
+                  </>
+                )}
               </p>
             </div>
 
@@ -1316,6 +1696,46 @@ export default function MenuPage() {
       </section>
 
       {/* ------------------------------------------
+          REDUX FETCH ERROR BANNER
+      ------------------------------------------ */}
+      {hasLoadError && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold">Couldn't load the live menu</p>
+                <p className="text-xs text-red-700/80 mt-0.5">
+                  {mainCategoriesError || productsError || "Something went wrong fetching menu data. Please try again."}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={fetchMenuData}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer shrink-0"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------
+          PREVIEW-DATA NOTICE (only when backend has nothing yet)
+      ------------------------------------------ */}
+      {!hasLoadError && usingPreviewDishes && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+          <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-amber-800">
+            <Info className="w-4 h-4 shrink-0" />
+            <p className="text-xs font-semibold">
+              Menu data is currently unavailable. Please check your internet connection or try again later.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------
           MAIN CONTENT AREA (Sidebar Filters + Dish Grid)
       ------------------------------------------ */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
@@ -1357,46 +1777,47 @@ export default function MenuPage() {
                     <span>Main Category</span>
                   </label>
                   <span className="text-[10px] text-zinc-400 font-medium">
-                    {Object.keys(categoryTree).length - 1} Cuisines
+                    {Object.keys(dynamicCategoryTree).length - 1} Cuisines
                   </span>
                 </div>
 
                 <div className="space-y-1.5">
-                  {Object.entries(categoryTree).map(([catId, catData]) => {
+                  {Object.entries(dynamicCategoryTree).map(([catId, catData]) => {
                     const isSelected = selectedMainCat === catId;
                     const count =
                       catId === "all"
-                        ? fullMenuCatalog.length
-                        : fullMenuCatalog.filter((d) => d.mainCategory === catId).length;
+                        ? allDishes.length
+                        : allDishes.filter((d) => {
+                          const dishCat = (d.mainCategory || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                          const targetCat = (catData.name || catId).toLowerCase().replace(/[^a-z0-9]/g, "");
+                          return dishCat === targetCat || dishCat.includes(targetCat) || targetCat.includes(dishCat);
+                        }).length;
 
                     return (
                       <button
                         key={catId}
                         onClick={() => handleMainCategoryChange(catId)}
-                        className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 border cursor-pointer ${
-                          isSelected
-                            ? "bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white border-transparent shadow-md shadow-rose-600/25 font-bold scale-[1.01]"
-                            : "bg-zinc-50/80 hover:bg-rose-50 text-zinc-700 hover:text-rose-700 border-zinc-200/70 hover:border-rose-200 shadow-2xs hover:shadow-xs"
-                        }`}
+                        className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 border cursor-pointer ${isSelected
+                          ? "bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white border-transparent shadow-md shadow-rose-600/25 font-bold scale-[1.01]"
+                          : "bg-zinc-50/80 hover:bg-rose-50 text-zinc-700 hover:text-rose-700 border-zinc-200/70 hover:border-rose-200 shadow-2xs hover:shadow-xs"
+                          }`}
                       >
                         <span className="flex items-center gap-2.5">
                           <span
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 transition-transform duration-200 group-hover:scale-110 ${
-                              isSelected
-                                ? "bg-white/20 text-white backdrop-blur-xs"
-                                : "bg-rose-100/60 text-zinc-800"
-                            }`}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 transition-transform duration-200 group-hover:scale-110 ${isSelected
+                              ? "bg-white/20 text-white backdrop-blur-xs"
+                              : "bg-rose-100/60 text-zinc-800"
+                              }`}
                           >
                             {catData.icon}
                           </span>
                           <span className="font-bold">{catData.name}</span>
                         </span>
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-black transition-colors ${
-                            isSelected
-                              ? "bg-white/25 text-white"
-                              : "bg-zinc-200/70 group-hover:bg-rose-200/60 text-zinc-600 group-hover:text-rose-800"
-                          }`}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black transition-colors ${isSelected
+                            ? "bg-white/25 text-white"
+                            : "bg-zinc-200/70 group-hover:bg-rose-200/60 text-zinc-600 group-hover:text-rose-800"
+                            }`}
                         >
                           {count}
                         </span>
@@ -1432,11 +1853,10 @@ export default function MenuPage() {
                       <button
                         key={sub.id}
                         onClick={() => setSelectedSubCat(sub.id)}
-                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border cursor-pointer ${
-                          isSubSelected
-                            ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white border-transparent shadow-xs shadow-rose-600/30"
-                            : "bg-zinc-50 hover:bg-rose-50 hover:text-rose-700 text-zinc-600 border-zinc-200/80 hover:border-rose-200 shadow-2xs"
-                        }`}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border cursor-pointer ${isSubSelected
+                          ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white border-transparent shadow-xs shadow-rose-600/30"
+                          : "bg-zinc-50 hover:bg-rose-50 hover:text-rose-700 text-zinc-600 border-zinc-200/80 hover:border-rose-200 shadow-2xs"
+                          }`}
                       >
                         {sub.name}
                       </button>
@@ -1451,28 +1871,28 @@ export default function MenuPage() {
               <div className="space-y-3 pt-3 border-t border-zinc-100">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5 text-rose-600" />
+                    <span className="font-serif font-black text-rose-600 text-sm">₹</span>
                     <span>Price Range</span>
                   </label>
                   <span className="text-xs font-extrabold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200/60">
-                    Max: ${maxPriceSlider}
+                    Max: ₹{maxPriceSlider}
                   </span>
                 </div>
 
                 {/* Slider */}
                 <input
                   type="range"
-                  min="5"
-                  max="30"
-                  step="1"
+                  min="0"
+                  max={maxAvailablePrice}
+                  step="10"
                   value={maxPriceSlider}
                   onChange={(e) => setMaxPriceSlider(Number(e.target.value))}
                   className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-rose-600"
                 />
                 <div className="flex justify-between text-[10px] text-zinc-400 font-semibold">
-                  <span>$5</span>
-                  <span>$15</span>
-                  <span>$30</span>
+                  <span>₹0</span>
+                  <span>₹{Math.round(maxAvailablePrice / 2)}</span>
+                  <span>₹{maxAvailablePrice}</span>
                 </div>
 
                 {/* Price Tier Quick Buttons */}
@@ -1483,11 +1903,10 @@ export default function MenuPage() {
                       <button
                         key={range.id}
                         onClick={() => setSelectedPriceTier(range.id)}
-                        className={`py-1.5 px-2 rounded-xl text-xs font-semibold text-center transition-all border cursor-pointer ${
-                          isRangeSelected
-                            ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                            : "bg-zinc-50 text-zinc-600 border-zinc-200/80 hover:bg-zinc-100"
-                        }`}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-semibold text-center transition-all border cursor-pointer ${isRangeSelected
+                          ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                          : "bg-zinc-50 text-zinc-600 border-zinc-200/80 hover:bg-zinc-100"
+                          }`}
                       >
                         {range.label}
                       </button>
@@ -1562,11 +1981,10 @@ export default function MenuPage() {
                     <button
                       key={spice.id}
                       onClick={() => setSelectedSpice(spice.id)}
-                      className={`py-1.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-                        selectedSpice === spice.id
-                          ? "bg-zinc-900 text-white border-zinc-900"
-                          : "bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100"
-                      }`}
+                      className={`py-1.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${selectedSpice === spice.id
+                        ? "bg-zinc-900 text-white border-zinc-900"
+                        : "bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100"
+                        }`}
                     >
                       {spice.label}
                     </button>
@@ -1595,9 +2013,15 @@ export default function MenuPage() {
             <div className="hidden lg:flex bg-white rounded-2xl p-4 border border-zinc-200/80 shadow-sm items-center justify-between flex-wrap gap-3 mb-5">
               <div className="flex items-center gap-3">
                 <p className="text-xs sm:text-sm font-bold text-zinc-800">
-                  Showing <span className="text-rose-600 font-extrabold">{Math.min(visibleCount, filteredDishes.length)}</span> of{" "}
-                  <span className="text-zinc-900 font-extrabold">{filteredDishes.length}</span>{" "}
-                  {filteredDishes.length === 1 ? "dish" : "dishes"}
+                  {isInitialLoading ? (
+                    "Loading menu…"
+                  ) : (
+                    <>
+                      Showing <span className="text-rose-600 font-extrabold">{Math.min(visibleCount, filteredDishes.length)}</span> of{" "}
+                      <span className="text-zinc-900 font-extrabold">{filteredDishes.length}</span>{" "}
+                      {filteredDishes.length === 1 ? "dish" : "dishes"}
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -1625,22 +2049,20 @@ export default function MenuPage() {
                 <div className="hidden sm:flex items-center p-1 bg-zinc-100 rounded-xl border border-zinc-200/60">
                   <button
                     onClick={() => setViewMode("grid")}
-                    className={`p-1.5 rounded-lg transition-all ${
-                      viewMode === "grid"
-                        ? "bg-white text-rose-600 shadow-xs"
-                        : "text-zinc-500 hover:text-zinc-800"
-                    }`}
+                    className={`p-1.5 rounded-lg transition-all ${viewMode === "grid"
+                      ? "bg-white text-rose-600 shadow-xs"
+                      : "text-zinc-500 hover:text-zinc-800"
+                      }`}
                     aria-label="Grid view"
                   >
                     <LayoutGrid className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setViewMode("list")}
-                    className={`p-1.5 rounded-lg transition-all ${
-                      viewMode === "list"
-                        ? "bg-white text-rose-600 shadow-xs"
-                        : "text-zinc-500 hover:text-zinc-800"
-                    }`}
+                    className={`p-1.5 rounded-lg transition-all ${viewMode === "list"
+                      ? "bg-white text-rose-600 shadow-xs"
+                      : "text-zinc-500 hover:text-zinc-800"
+                      }`}
                     aria-label="List view"
                   >
                     <List className="w-4 h-4" />
@@ -1656,7 +2078,7 @@ export default function MenuPage() {
 
                 {selectedMainCat !== "all" && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-semibold">
-                    Category: {categoryTree[selectedMainCat]?.name}
+                    Category: {dynamicCategoryTree[selectedMainCat]?.name || selectedMainCat}
                     <button onClick={() => handleMainCategoryChange("all")} className="cursor-pointer">
                       <X className="w-3 h-3 hover:text-rose-600" />
                     </button>
@@ -1665,7 +2087,7 @@ export default function MenuPage() {
 
                 {selectedSubCat !== "all" && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-200 text-zinc-800 text-xs font-semibold">
-                    Sub: {selectedSubCat}
+                    Sub: {activeSubcategories.find((s) => s.id === selectedSubCat)?.name || selectedSubCat}
                     <button onClick={() => setSelectedSubCat("all")} className="cursor-pointer">
                       <X className="w-3 h-3 hover:text-rose-600" />
                     </button>
@@ -1681,10 +2103,10 @@ export default function MenuPage() {
                   </span>
                 )}
 
-                {maxPriceSlider < 30 && (
+                {maxPriceSlider < maxAvailablePrice && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-semibold">
-                    Max: ${maxPriceSlider}
-                    <button onClick={() => setMaxPriceSlider(30)} className="cursor-pointer">
+                    Max: ₹{maxPriceSlider}
+                    <button onClick={() => setMaxPriceSlider(maxAvailablePrice)} className="cursor-pointer">
                       <X className="w-3 h-3 hover:text-rose-600" />
                     </button>
                   </span>
@@ -1738,7 +2160,9 @@ export default function MenuPage() {
             {/* ------------------------------------------
                 DISHES GRID / LIST VIEW (12 Items initially + Load More)
             ------------------------------------------ */}
-            {filteredDishes.length > 0 ? (
+            {isInitialLoading && allDishes.length === 0 ? (
+              <SkeletonGrid viewMode={viewMode} />
+            ) : filteredDishes.length > 0 ? (
               <div className="space-y-8">
                 <div
                   className={
@@ -1748,249 +2172,20 @@ export default function MenuPage() {
                   }
                 >
                   {filteredDishes.slice(0, visibleCount).map((dish) => {
-                    const qty = cartItems[dish.id] || 0;
-                    const isFav = !!favorites[dish.id];
-
-                    if (viewMode === "list") {
-                      return (
-                        <div
-                          key={dish.id}
-                          className="bg-white rounded-3xl p-4 sm:p-5 border border-zinc-200/80 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col sm:flex-row items-center gap-5 group"
-                        >
-                          {/* Image */}
-                          <div className="relative w-full sm:w-44 h-40 sm:h-36 rounded-2xl overflow-hidden shrink-0 bg-zinc-100">
-                            <img
-                              src={dish.image}
-                              alt={dish.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                            {/* Veg Dot */}
-                            <div className="absolute top-2.5 left-2.5 w-5 h-5 rounded-md bg-white/95 backdrop-blur-sm border border-emerald-600 flex items-center justify-center">
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
-                            </div>
-                            {dish.isBestseller && (
-                              <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-500 text-white text-[10px] font-bold shadow-xs">
-                                Bestseller
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Details */}
-                          <div className="flex-1 min-w-0 w-full space-y-1.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200/60 text-[10px] font-bold uppercase">
-                                  {dish.mainCategory.replace("-", " ")}
-                                </span>
-                                <div className="flex items-center gap-1 text-amber-500 text-xs font-bold">
-                                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                                  <span>{dish.rating}</span>
-                                  <span className="text-zinc-400 font-normal">({dish.reviews})</span>
-                                </div>
-                              </div>
-
-                              <button
-                                onClick={() => toggleFavorite(dish.id)}
-                                className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer"
-                              >
-                                <Heart
-                                  className={`w-4 h-4 ${
-                                    isFav ? "fill-rose-500 text-rose-500" : ""
-                                  }`}
-                                />
-                              </button>
-                            </div>
-
-                            <h3
-                              onClick={() => setQuickViewDish(dish)}
-                              className="text-base sm:text-lg font-bold text-zinc-900 hover:text-rose-600 cursor-pointer transition-colors line-clamp-1"
-                            >
-                              {dish.title}
-                            </h3>
-
-                            <p className="text-xs text-zinc-500 line-clamp-2">{dish.shortDesc}</p>
-
-                            <div className="flex items-center gap-3 text-[11px] text-zinc-400 font-medium pt-1">
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-rose-500" />
-                                {dish.prepTime}
-                              </span>
-                              <span>•</span>
-                              <span className="flex items-center gap-1">
-                                <Flame className="w-3 h-3 text-rose-500" />
-                                {dish.calories} kcal
-                              </span>
-                              {dish.isJain && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-emerald-600 font-semibold">Jain Friendly</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Price & Add Button */}
-                          <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-100 shrink-0">
-                            <div className="text-left sm:text-right">
-                              <span className="text-xl font-black text-zinc-900">
-                                ${dish.price.toFixed(2)}
-                              </span>
-                              {dish.oldPrice && (
-                                <span className="text-xs text-zinc-400 line-through ml-2 sm:block sm:ml-0">
-                                  ${dish.oldPrice.toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-
-                            {qty === 0 ? (
-                              <button
-                                onClick={() => updateQuantity(dish.id, 1, dish)}
-                                className="h-9 px-5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm shadow-rose-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Add</span>
-                              </button>
-                            ) : (
-                              <div className="h-9 px-2.5 rounded-xl bg-rose-600 text-white shadow-sm flex items-center gap-2">
-                                <button
-                                  onClick={() => updateQuantity(dish.id, -1, dish)}
-                                  className="w-6 h-6 rounded-lg hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer"
-                                  aria-label="Decrease quantity"
-                                >
-                                  <Minus className="w-3.5 h-3.5" />
-                                </button>
-                                <span className="text-xs font-bold min-w-[16px] text-center">{qty}</span>
-                                <button
-                                  onClick={() => updateQuantity(dish.id, 1, dish)}
-                                  className="w-6 h-6 rounded-lg hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer"
-                                  aria-label="Increase quantity"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    // GRID VIEW CARD
                     return (
-                      <div
+                      <Menucard
                         key={dish.id}
-                        className="bg-white rounded-3xl border border-zinc-200/80 shadow-xs hover:shadow-xl hover:border-rose-200/80 transition-all duration-300 flex flex-col justify-between overflow-hidden group"
-                      >
-                        {/* Card Media Header */}
-                        <div className="relative w-full h-36 sm:h-44 bg-zinc-100 overflow-hidden">
-                          <img
-                            src={dish.image}
-                            alt={dish.title}
-                            className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500"
-                          />
-
-                          {/* Top Badges */}
-                          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                            {/* Pure Veg Green Icon */}
-                            <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-md bg-white/95 backdrop-blur-sm border border-emerald-600 flex items-center justify-center shadow-xs">
-                              <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-600"></span>
-                            </div>
-
-                            {dish.isBestseller && (
-                              <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-500 text-white text-[9px] sm:text-[10px] font-bold shadow-xs">
-                                Bestseller
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Wishlist Heart */}
-                          <button
-                            onClick={() => toggleFavorite(dish.id)}
-                            className="absolute top-2.5 right-2.5 p-1.5 sm:p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white text-zinc-500 hover:text-rose-500 transition-all shadow-xs cursor-pointer"
-                            aria-label="Add to favorites"
-                          >
-                            <Heart
-                              className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                                isFav ? "fill-rose-500 text-rose-500" : ""
-                              }`}
-                            />
-                          </button>
-
-                          {/* Prep time badge on bottom */}
-                          <div className="absolute bottom-2 left-2.5 px-2 py-0.5 rounded-md bg-zinc-950/75 backdrop-blur-sm text-white text-[10px] font-semibold flex items-center gap-1">
-                            <Clock className="w-2.5 h-2.5 text-amber-400" />
-                            <span>{dish.prepTime}</span>
-                          </div>
-                        </div>
-
-                        {/* Card Body */}
-                        <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between space-y-2.5">
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold">
-                              <span className="text-rose-600 uppercase tracking-wider">
-                                {dish.subCategory.replace("-", " ")}
-                              </span>
-                              <div className="flex items-center gap-1 text-amber-500">
-                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                <span>{dish.rating}</span>
-                                <span className="text-zinc-400 font-normal">({dish.reviews})</span>
-                              </div>
-                            </div>
-
-                            <h3
-                              onClick={() => setQuickViewDish(dish)}
-                              className="text-xs sm:text-sm font-bold text-zinc-900 group-hover:text-rose-600 transition-colors line-clamp-1 cursor-pointer"
-                            >
-                              {dish.title}
-                            </h3>
-
-                            <p className="text-[11px] text-zinc-500 line-clamp-2 leading-relaxed">
-                              {dish.shortDesc}
-                            </p>
-                          </div>
-
-                          {/* Card Footer */}
-                          <div className="pt-2 border-t border-zinc-100 flex items-center justify-between gap-2">
-                            <div>
-                              <span className="text-sm sm:text-base font-black text-zinc-900">
-                                ${dish.price.toFixed(2)}
-                              </span>
-                              {dish.oldPrice && (
-                                <span className="text-[10px] text-zinc-400 line-through block leading-none">
-                                  ${dish.oldPrice.toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-
-                            {qty === 0 ? (
-                              <button
-                                onClick={() => updateQuantity(dish.id, 1, dish)}
-                                className="h-[34px] px-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs hover:shadow-rose-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Add</span>
-                              </button>
-                            ) : (
-                              <div className="h-[34px] px-2 rounded-full bg-rose-600 text-white shadow-xs flex items-center gap-1.5">
-                                <button
-                                  onClick={() => updateQuantity(dish.id, -1, dish)}
-                                  className="w-6 h-6 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer"
-                                  aria-label="Decrease quantity"
-                                >
-                                  <Minus className="w-3.5 h-3.5" />
-                                </button>
-                                <span className="text-xs font-bold min-w-[14px] text-center">{qty}</span>
-                                <button
-                                  onClick={() => updateQuantity(dish.id, 1, dish)}
-                                  className="w-6 h-6 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer"
-                                  aria-label="Increase quantity"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                        dish={dish}
+                        viewMode={viewMode}
+                        inCart={isInCart(dish)}
+                        qty={getQty(dish)}
+                        getQtyForDish={getQty}
+                        onUpdateQty={updateQty}
+                        inWishlist={isInWishlist(dish)}
+                        onAddToCart={addToCart}
+                        onToggleWishlist={addToWishlist}
+                        onQuickView={setQuickViewDish}
+                      />
                     );
                   })}
                 </div>
@@ -2067,7 +2262,7 @@ export default function MenuPage() {
           MOBILE FILTER DRAWER (Slide Up with Main Cat & Subcat)
       ------------------------------------------ */}
       {mobileFilterDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-60 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-h-[88vh] overflow-y-auto bg-white rounded-t-3xl p-6 space-y-5 animate-in slide-in-from-bottom duration-300">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
@@ -2089,17 +2284,16 @@ export default function MenuPage() {
                 1. Main Category
               </label>
               <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                {Object.entries(categoryTree).map(([catId, catData]) => {
+                {Object.entries(dynamicCategoryTree).map(([catId, catData]) => {
                   const isSelected = selectedMainCat === catId;
                   return (
                     <button
                       key={catId}
                       onClick={() => handleMainCategoryChange(catId)}
-                      className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold border ${
-                        isSelected
-                          ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                          : "bg-zinc-50 text-zinc-700 border-zinc-200"
-                      }`}
+                      className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold border ${isSelected
+                        ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                        : "bg-zinc-50 text-zinc-700 border-zinc-200"
+                        }`}
                     >
                       <span className="flex items-center gap-1.5 truncate">
                         <span>{catData.icon}</span>
@@ -2121,11 +2315,10 @@ export default function MenuPage() {
                   <button
                     key={sub.id}
                     onClick={() => setSelectedSubCat(sub.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                      selectedSubCat === sub.id
-                        ? "bg-zinc-900 text-white border-zinc-900"
-                        : "bg-zinc-50 text-zinc-700 border-zinc-200"
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${selectedSubCat === sub.id
+                      ? "bg-zinc-900 text-white border-zinc-900"
+                      : "bg-zinc-50 text-zinc-700 border-zinc-200"
+                      }`}
                   >
                     {sub.name}
                   </button>
@@ -2137,28 +2330,32 @@ export default function MenuPage() {
             <div className="space-y-2.5 pt-3 border-t border-zinc-100">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase text-zinc-500">
-                  3. Max Price: ${maxPriceSlider}
+                  3. Max Price: ₹{maxPriceSlider}
                 </label>
               </div>
               <input
                 type="range"
-                min="5"
-                max="30"
-                step="1"
+                min="0"
+                max={maxAvailablePrice}
+                step="10"
                 value={maxPriceSlider}
                 onChange={(e) => setMaxPriceSlider(Number(e.target.value))}
                 className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none accent-rose-600"
               />
+              <div className="flex justify-between text-[10px] text-zinc-400 font-semibold mb-2">
+                <span>₹0</span>
+                <span>₹{Math.round(maxAvailablePrice / 2)}</span>
+                <span>₹{maxAvailablePrice}</span>
+              </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {priceRanges.map((range) => (
                   <button
                     key={range.id}
                     onClick={() => setSelectedPriceTier(range.id)}
-                    className={`py-2 px-3 rounded-xl text-xs font-semibold text-center border ${
-                      selectedPriceTier === range.id
-                        ? "bg-rose-600 text-white border-rose-600"
-                        : "bg-zinc-50 text-zinc-700 border-zinc-200"
-                    }`}
+                    className={`py-2 px-3 rounded-xl text-xs font-semibold text-center border ${selectedPriceTier === range.id
+                      ? "bg-rose-600 text-white border-rose-600"
+                      : "bg-zinc-50 text-zinc-700 border-zinc-200"
+                      }`}
                   >
                     {range.label}
                   </button>
@@ -2223,7 +2420,7 @@ export default function MenuPage() {
           QUICK VIEW DISH DETAILS MODAL
       ------------------------------------------ */}
       {quickViewDish && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
             {/* Header Image Banner */}
             <div className="relative w-full h-56 sm:h-64 bg-zinc-100 shrink-0">
@@ -2266,26 +2463,34 @@ export default function MenuPage() {
                         ({quickViewDish.reviews} reviews)
                       </span>
                     </div>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-rose-500" />
-                      {quickViewDish.prepTime}
-                    </span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Flame className="w-3.5 h-3.5 text-rose-500" />
-                      {quickViewDish.calories} kcal
-                    </span>
+                    {quickViewDish.prepTime && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-rose-500" />
+                          {quickViewDish.prepTime}
+                        </span>
+                      </>
+                    )}
+                    {quickViewDish.calories && (
+                      <>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Flame className="w-3.5 h-3.5 text-rose-500" />
+                          {quickViewDish.calories} kcal
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 <div className="text-right shrink-0">
                   <span className="text-2xl font-black text-rose-600">
-                    ${quickViewDish.price.toFixed(2)}
+                    ₹{(Number(quickViewDish.price) || 0).toFixed(0)}
                   </span>
                   {quickViewDish.oldPrice && (
                     <span className="text-xs text-zinc-400 line-through block">
-                      ${quickViewDish.oldPrice.toFixed(2)}
+                      ₹{(Number(quickViewDish.oldPrice) || 0).toFixed(0)}
                     </span>
                   )}
                 </div>
@@ -2316,82 +2521,68 @@ export default function MenuPage() {
 
             {/* Modal Footer */}
             <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-zinc-500">Qty:</span>
-                <div className="flex items-center gap-2 bg-white border border-zinc-200 rounded-xl px-2 py-1">
-                  <button
-                    onClick={() => updateQuantity(quickViewDish.id, -1, quickViewDish)}
-                    className="p-1 hover:bg-zinc-100 rounded text-zinc-600 cursor-pointer"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="text-xs font-bold min-w-[16px] text-center">
-                    {cartItems[quickViewDish.id] || 1}
-                  </span>
-                  <button
-                    onClick={() => updateQuantity(quickViewDish.id, 1, quickViewDish)}
-                    className="p-1 hover:bg-zinc-100 rounded text-zinc-600 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
               <button
-                onClick={() => {
-                  if (!cartItems[quickViewDish.id]) {
-                    updateQuantity(quickViewDish.id, 1, quickViewDish);
-                  }
-                  setQuickViewDish(null);
-                }}
-                className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-rose-600/30 hover:shadow-lg transition-all cursor-pointer"
+                onClick={() => addToWishlist(quickViewDish)}
+                className="flex items-center gap-2 px-4 py-3 rounded-2xl border border-zinc-200 bg-white text-zinc-700 font-bold text-xs hover:text-rose-600 hover:border-rose-200 cursor-pointer transition-colors"
               >
-                <ShoppingBag className="w-4 h-4" />
-                <span>Add To Order</span>
+                <Heart className={`w-4 h-4 ${isInWishlist(quickViewDish) ? "fill-rose-600 text-rose-600" : ""}`} />
+                <span>{isInWishlist(quickViewDish) ? "Saved" : "Save"}</span>
               </button>
+
+              {getQty(quickViewDish) > 0 ? (
+                <div className="flex items-center gap-2.5">
+                  <QtyStepper
+                    qty={getQty(quickViewDish)}
+                    disabled={!isInCart(quickViewDish)}
+                    onChange={(d) => updateQty(quickViewDish, d)}
+                  />
+                  <Link
+                    href="/cart"
+                    className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-rose-600/30 hover:shadow-lg transition-all"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>View Cart</span>
+                  </Link>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    addToCart(quickViewDish);
+                  }}
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-rose-600/30 hover:shadow-lg transition-all cursor-pointer"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Add To Cart</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ------------------------------------------
-          FLOATING CART SUMMARY BAR (When items added)
-      ------------------------------------------ */}
-      {totalCartCount > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-xl bg-zinc-950/95 backdrop-blur-xl text-white rounded-3xl p-3.5 sm:p-4 shadow-2xl border border-zinc-800 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-rose-600/40">
-              <ShoppingBag className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
-                <span>{totalCartCount} {totalCartCount === 1 ? "Item" : "Items"} in Cart</span>
-                <span className="text-zinc-500">•</span>
-                <span className="text-amber-400 font-extrabold">${totalCartAmount.toFixed(2)}</span>
-              </p>
-              <p className="text-[10px] text-zinc-400">
-                Includes free contactless delivery
-              </p>
-            </div>
-          </div>
+      <Addtocart totalCartCount={cartCount} totalCartAmount={cartTotal} onClearCart={clearCart} />
 
-          <Link
-            href="/cart"
-            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-rose-600/30 hover:scale-105 active:scale-95 transition-all"
-          >
-            <span>Checkout</span>
-            <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-      )}
-
-      {/* Added Toast Notification */}
-      {addedToast && (
-        <div className="fixed top-24 right-6 z-50 bg-zinc-900 text-white px-4 py-2.5 rounded-2xl shadow-xl border border-zinc-700 flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-3 duration-200">
+      {toast && (
+        <div className="fixed top-24 right-6 z-70 bg-zinc-900 text-white px-4 py-2.5 rounded-2xl shadow-xl border border-zinc-700 flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-top-3 duration-200">
           <Check className="w-4 h-4 text-emerald-400" />
-          <span>Added "{addedToast}" to cart!</span>
+          <span>{toast}</span>
         </div>
       )}
+      <CartAddedPopup
+        popup={addedPopup}
+        getQty={getQty}
+        isInCart={isInCart}
+        onUpdateQty={updateQty}
+        onClose={closeAddedPopup}
+      />
     </div>
+  );
+}
+
+export default function MenuPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+      <MenuPageContent />
+    </Suspense>
   );
 }

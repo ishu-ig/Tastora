@@ -15,10 +15,9 @@ import { Marquee } from "../Component/Marquee";
 import { Category } from "../Component/Category";
 import { Menu } from "../Component/Menu";
 import { Combos } from "../Component/Combos";
-import { About } from "../Component/About";
+import { Thali } from "../Component/Thali";
 import { Offers } from "../Component/offers";
 import { Testimonial } from "../Component/Testimonial";
-import { Contactus } from "../Component/ContactUs";
 
 const heroSlides = [
   {
@@ -293,20 +292,17 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* INFINITE MARQUEE TICKER */}
-      {/* <Marquee /> */}
-
       {/* CATEGORY SECTION */}
       <Category />
 
       {/* DELICIOUS MENU SECTION WITH FILTER BUTTONS & CARDS */}
       <Menu />
 
-      {/* SUPER SAVER FOOD COMBOS & THALIS */}
-      <Combos />
+      {/* ROYAL THALIS SPECIALS */}
+      <Thali />
 
-      {/* ABOUT STORY SECTION */}
-      <About />
+      {/* SUPER SAVER FOOD COMBOS */}
+      <Combos />
 
       {/* SPECIAL WEEKEND DEAL */}
       <Offers />
@@ -314,8 +310,6 @@ export default function HomePage() {
       {/* TESTIMONIALS SECTION */}
       <Testimonial />
 
-      {/* CONTACT US SECTION */}
-      <Contactus />
     </div>
   );
 }

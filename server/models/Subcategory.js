@@ -4,7 +4,7 @@ const SubcategorySchema = new mongoose.Schema({
     name: {
         type: String,
         unique: true,
-        required: [true, "Subcategory Name Is Mendatory"]
+        required: [true, "Subcategory Name Is Mandatory"]
     },
     maincategory: {
         type: mongoose.Schema.Types.ObjectId,
@@ -13,7 +13,7 @@ const SubcategorySchema = new mongoose.Schema({
     },
     pic: {
         type: String,
-        required: [true, "Subcategory Pic Is Mendatory"]
+        required: [true, "Subcategory Pic Is Mandatory"]
     },
     active: {
         type: Boolean,
@@ -21,6 +21,6 @@ const SubcategorySchema = new mongoose.Schema({
     }
 })
 
-const Subcategory = new mongoose.model("Subcategory", SubcategorySchema)
+const Subcategory = mongoose.models.Subcategory || mongoose.model("Subcategory", SubcategorySchema)
 
 module.exports = Subcategory 
