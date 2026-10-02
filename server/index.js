@@ -50,7 +50,7 @@ app.get("/api/health", (req, res) => {
 // If your React app is a sibling folder, set CLIENT_BUILD_PATH=../client/build
 const buildPath = path.resolve(
     __dirname,
-    process.env.CLIENT_BUILD_PATH || "client/build"
+    process.env.CLIENT_BUILD_PATH || "admin/build"
 );
 const indexHtml = path.join(buildPath, "index.html");
 
