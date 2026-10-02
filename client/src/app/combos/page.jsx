@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -729,9 +729,9 @@ function ComboCard({ combo, qty, isFav, isList, onToggleFav, onAdd, onChangeQty,
 }
 
 // ==========================================
-// 4. PAGE
+// 4. PAGE CONTENT (uses useSearchParams, so it must live inside <Suspense>)
 // ==========================================
-export default function CombosPage() {
+function CombosContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlSearchQuery = searchParams.get("search") || "";
@@ -959,12 +959,14 @@ export default function CombosPage() {
     filterJainOnly && { key: "jain", label: "Jain Friendly", clear: () => setFilterJainOnly(false) },
     filterChefSpecialOnly && { key: "chef", label: "Chef Specials", clear: () => setFilterChefSpecialOnly(false) },
     filterBestsellerOnly && { key: "best", label: "Bestsellers", clear: () => setFilterBestsellerOnly(false) },
-    searchQuery.trim() && { key: "search", label: `"${searchQuery.trim()}"`, clear: () => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("search");
-      const query = params.toString();
-      router.replace(query ? `/combos?${query}` : "/combos", { scroll: false });
-    } },
+    searchQuery.trim() && {
+      key: "search", label: `"${searchQuery.trim()}"`, clear: () => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("search");
+        const query = params.toString();
+        router.replace(query ? `/combos?${query}` : "/combos", { scroll: false });
+      }
+    },
   ].filter(Boolean);
   const activeFiltersCount = activeChips.length;
 
@@ -1951,5 +1953,31 @@ export default function CombosPage() {
         onClearCart={handleClearCart}
       />
     </div>
+  );
+}
+
+// ==========================================
+// 5. SUSPENSE FALLBACK + DEFAULT EXPORT
+// ==========================================
+function CombosFallback() {
+  return (
+    <div className="min-h-screen bg-zinc-50/70 pt-56 sm:pt-52 md:pt-44 lg:pt-40 pb-20">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="h-10 w-72 rounded-xl bg-zinc-200 animate-pulse" />
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="h-96 rounded-2xl bg-zinc-200/70 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function CombosPage() {
+  return (
+    <Suspense fallback={<CombosFallback />}>
+      <CombosContent />
+    </Suspense>
   );
 }
