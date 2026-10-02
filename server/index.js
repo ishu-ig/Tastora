@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
 const http = require("http");
 const { Server } = require("socket.io");
 
@@ -20,13 +21,15 @@ const whitelist = [
     "http://localhost:8000",
     "https://easy-dine-iota.vercel.app",
     "https://easydine-86b9.onrender.com",
-    'https://admin-easydine.ishaanportfolio.com',
-    'https://easydine.ishaanportfolio.com'
+    "https://tastora.onrender.com",
+    "https://admin-easydine.ishaanportfolio.com",
+    "https://easydine.ishaanportfolio.com"
 ];
 
 const corsOptions = {
     origin: function (origin, callback) {
-
+        // Same-origin requests (admin served from this server) and
+        // non-browser clients have no origin, so they are allowed.
         if (!origin || whitelist.includes(origin)) {
             callback(null, true);
         } else {
@@ -52,16 +55,34 @@ const io = new Server(server, {
 // Make io available inside controllers/routes
 app.set("io", io);
 
-// ---------------- Routes ----------------
+// ---------------- API Routes ----------------
 
 app.use("/api", Router);
 
-// ---------------- React Build ----------------
+app.get("/api/health", (req, res) => {
+    res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
 
-app.use(express.static(path.join(__dirname, "admin/build")));
+// Unknown API routes -> JSON 404
+app.use("/api", (req, res) => {
+    res.status(404).json({ result: "Fail", reason: "API route not found" });
+});
 
-app.get("/{*splat}", (req, res) => {
-    res.sendFile(path.join(__dirname, "admin/build", "index.html"));
+// ---------------- Admin Build (server/admin/build) ----------------
+
+const adminBuild = path.join(__dirname, "admin", "build");
+const adminIndex = path.join(adminBuild, "index.html");
+
+app.use(express.static(adminBuild));
+
+// Any other route -> admin app (supports client-side routing)
+app.use((req, res) => {
+    if (!fs.existsSync(adminIndex)) {
+        return res
+            .status(404)
+            .json({ result: "Fail", reason: "Admin build not found" });
+    }
+    res.sendFile(adminIndex);
 });
 
 // ---------------- Start Server ----------------
