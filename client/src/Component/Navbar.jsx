@@ -57,6 +57,10 @@ export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const isOrdersPage = pathname?.startsWith("/orders");
+  const isSearchHidden =
+    pathname?.startsWith("/orders") ||
+    pathname?.startsWith("/cart") ||
+    pathname?.startsWith("/checkout");
 
   const { favorites, membership, isMember } = useCart();
   const coinsBalance = useCreditCoins();
@@ -159,7 +163,7 @@ export function Navbar() {
     };
 
     const handleKeyDown = (e) => {
-      if (!isOrdersPage && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (!isSearchHidden && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchOpen(true);
         searchInputRef.current?.focus();
@@ -805,7 +809,7 @@ export function Navbar() {
             </div>
 
             {/* Row 2: Mobile Clean Search Bar */}
-            {!isOrdersPage && (
+            {!isSearchHidden && (
               <div className="relative w-full" ref={searchRef}>
                 <div className="relative flex items-center w-full">
                   <Search className="w-4 h-4 text-rose-500 absolute left-3.5 pointer-events-none" />
@@ -948,7 +952,7 @@ export function Navbar() {
             </div>
 
             {/* Desktop Center Search Bar (takes all remaining width) */}
-            {!isOrdersPage ? (
+            {!isSearchHidden ? (
               <div className="flex-1 min-w-0 relative" ref={searchRef}>
                 <div className="relative flex items-center w-full">
                   <Search className="w-4 h-4 text-rose-500 absolute left-4 pointer-events-none transition-colors" />

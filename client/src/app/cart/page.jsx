@@ -625,22 +625,89 @@ export default function CartPage() {
         {/* ====================================================
             1. ORDER FULFILLMENT MODE SELECTOR (Delivery vs Takeaway vs Dine-In)
         ==================================================== */}
-        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-zinc-200/80 shadow-xs space-y-3">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-zinc-200/80 shadow-xs space-y-2.5 sm:space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0"></span>
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-700">
+              <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-zinc-700">
                 Choose Dining &amp; Delivery Option:
               </span>
             </div>
-            <span className="text-[11px] sm:text-xs font-bold text-zinc-400">
+            <span className="hidden sm:inline text-xs font-bold text-zinc-400">
               {orderMode === "delivery" && "🛵 Fast Doorstep Delivery"}
               {orderMode === "takeaway" && "🥡 Self-Pickup • 0 Delivery Fee"}
               {orderMode === "dinein" && "🍽️ Direct Table Service"}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+          {/* Mobile Segmented Switcher (< sm) */}
+          <div className="sm:hidden grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-zinc-100/90 border border-zinc-200">
+            {/* Delivery */}
+            <button
+              type="button"
+              onClick={() => setOrderMode("delivery")}
+              className={`py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 ${
+                orderMode === "delivery"
+                  ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-sm font-black"
+                  : "text-zinc-600 hover:text-zinc-900 font-bold"
+              }`}
+            >
+              <div className="flex items-center gap-1">
+                <Bike className="w-3.5 h-3.5" />
+                <span className="text-[11px] leading-tight">Delivery</span>
+              </div>
+              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                orderMode === "delivery" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+              }`}>
+                {isFreeDelivery ? "FREE" : `₹${CART_RULES.deliveryFee}`}
+              </span>
+            </button>
+
+            {/* Takeaway */}
+            <button
+              type="button"
+              onClick={() => setOrderMode("takeaway")}
+              className={`py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 ${
+                orderMode === "takeaway"
+                  ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-sm font-black"
+                  : "text-zinc-600 hover:text-zinc-900 font-bold"
+              }`}
+            >
+              <div className="flex items-center gap-1">
+                <Store className="w-3.5 h-3.5" />
+                <span className="text-[11px] leading-tight">Takeaway</span>
+              </div>
+              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                orderMode === "takeaway" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+              }`}>
+                ₹0 FEE
+              </span>
+            </button>
+
+            {/* Dine-In */}
+            <button
+              type="button"
+              onClick={() => setOrderMode("dinein")}
+              className={`py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 ${
+                orderMode === "dinein"
+                  ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-sm font-black"
+                  : "text-zinc-600 hover:text-zinc-900 font-bold"
+              }`}
+            >
+              <div className="flex items-center gap-1">
+                <Utensils className="w-3.5 h-3.5" />
+                <span className="text-[11px] leading-tight">Dine-In</span>
+              </div>
+              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold truncate max-w-[70px] ${
+                orderMode === "dinein" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-800"
+              }`}>
+                {tableNumber || "Table"}
+              </span>
+            </button>
+          </div>
+
+          {/* Desktop & Tablet Full Mode Cards (>= sm) */}
+          <div className="hidden sm:grid grid-cols-3 gap-2.5 sm:gap-3">
             {/* Mode 1: Home Delivery */}
             <button
               type="button"
@@ -856,18 +923,26 @@ export default function CartPage() {
                       className="w-full bg-zinc-50/60 hover:bg-zinc-50/90 rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-5 border border-zinc-200/80 hover:border-rose-200 transition-all duration-200 shadow-2xs hover:shadow-xs space-y-2.5 sm:space-y-3 group"
                     >
                       {/* =========================================================
-                          MOBILE VIEW (< sm / <640px): Modern Food App 2-Column Card
+                          MOBILE VIEW (< sm / <640px): Modern Native App Food Card
                       ========================================================= */}
                       <div className="sm:hidden space-y-2.5">
-                        {/* Top Row: Dish Info (Left) + Food Photo with Stepper (Right) */}
-                        <div className="flex items-start justify-between gap-3">
-                          {/* Left Column: Veg Badge, Title, Price, Description */}
-                          <div className="min-w-0 flex-1 space-y-1">
-                            {/* Veg emblem + Badges */}
+                        {/* Top: Image + Info Row */}
+                        <div className="flex items-start gap-3">
+                          {/* Food Photo with Veg Dot Badge */}
+                          <div className="relative w-18 h-18 rounded-2xl bg-zinc-100 overflow-hidden border border-zinc-200 shadow-2xs shrink-0">
+                            <img
+                              src={dish.image}
+                              alt={dish.title}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute top-1 left-1 w-3.5 h-3.5 rounded bg-white/95 border border-emerald-600 flex items-center justify-center shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                            </div>
+                          </div>
+
+                          {/* Info Column */}
+                          <div className="min-w-0 flex-1 space-y-0.5">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="w-3.5 h-3.5 rounded bg-white border border-emerald-600 flex items-center justify-center shrink-0">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                              </span>
                               <span className="px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 text-[9px] font-extrabold uppercase tracking-wide border border-rose-100">
                                 {dish.subCategory?.replace("-", " ") || "Pure Veg"}
                               </span>
@@ -883,86 +958,63 @@ export default function CartPage() {
                               )}
                             </div>
 
-                            {/* Dish Title */}
-                            <h3 className="text-sm font-black text-zinc-900 leading-snug line-clamp-2">
+                            <h3 className="text-xs sm:text-sm font-black text-zinc-900 leading-snug line-clamp-1">
                               {dish.title}
                             </h3>
 
-                            {/* Short Description */}
-                            {dish.shortDesc && (
-                              <p className="text-[11px] text-zinc-500 line-clamp-1">
-                                {dish.shortDesc}
-                              </p>
-                            )}
-
-                            {/* Unit Price */}
-                            <div className="flex items-center gap-1.5 pt-0.5 font-bold">
-                              <span className="text-rose-600 font-black text-sm">
+                            <div className="flex items-baseline gap-1.5 text-xs font-bold pt-0.5">
+                              <span className="text-rose-600 font-black">
                                 ₹{dish.price.toFixed(2)}
                               </span>
+                              <span className="text-[10px] text-zinc-400 font-normal">each</span>
                               {dish.oldPrice && (
-                                <span className="text-zinc-400 line-through text-[11px] font-normal">
+                                <span className="text-zinc-400 line-through text-[10px] font-normal">
                                   ₹{dish.oldPrice.toFixed(2)}
                                 </span>
                               )}
                             </div>
                           </div>
-
-                          {/* Right Column: Dish Image & Quantity Stepper */}
-                          <div className="flex flex-col items-center shrink-0 relative">
-                            <div className="relative w-20 h-20 rounded-2xl bg-zinc-100 overflow-hidden border border-zinc-200 shadow-2xs">
-                              <img
-                                src={dish.image}
-                                alt={dish.title}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-
-                            {/* Overlaid / Compact Stepper Pill */}
-                            <div className="-mt-3.5 z-10 flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-rose-500 text-white rounded-full px-2 py-1 shadow-md border-2 border-white">
-                              <button
-                                type="button"
-                                onClick={() => handleQtyChange(id, -1, dish)}
-                                className="w-4 h-4 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer active:scale-90"
-                                aria-label="Decrease quantity"
-                              >
-                                <Minus className="w-2.5 h-2.5" />
-                              </button>
-                              <span className="text-xs font-black min-w-[14px] text-center font-mono">
-                                {quantity}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleQtyChange(id, 1, dish)}
-                                className="w-4 h-4 rounded-full hover:bg-rose-700 flex items-center justify-center transition-colors cursor-pointer active:scale-90"
-                                aria-label="Increase quantity"
-                              >
-                                <Plus className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
-                          </div>
                         </div>
 
-                        {/* Mobile Bottom Row: Cooking Note Trigger + Line Total + Delete */}
-                        <div className="flex items-center justify-between pt-2 border-t border-zinc-200/60">
-                          {/* Note button */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActiveNoteItemId(activeNoteItemId === id ? null : id)
-                            }
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-600 hover:text-rose-600 bg-white px-2.5 py-1 rounded-xl border border-zinc-200/80 shadow-2xs cursor-pointer active:scale-95 transition-all"
-                          >
-                            <MessageSquare className="w-3 h-3 text-rose-500" />
-                            <span>{note ? "Edit note" : "+ Cooking note"}</span>
-                          </button>
+                        {/* Bottom Row: Stepper (Left) & Note/Trash/Total (Right) */}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-200/60">
+                          {/* Comfortable Stepper with touch-friendly buttons */}
+                          <div className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-rose-500 text-white rounded-full p-0.5 shadow-xs">
+                            <button
+                              type="button"
+                              onClick={() => handleQtyChange(id, -1, dish)}
+                              className="w-7 h-7 rounded-full hover:bg-rose-700 active:bg-rose-800 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
+                              aria-label="Decrease quantity"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="text-xs font-black min-w-[20px] text-center font-mono">
+                              {quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleQtyChange(id, 1, dish)}
+                              className="w-7 h-7 rounded-full hover:bg-rose-700 active:bg-rose-800 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
+                              aria-label="Increase quantity"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
 
-                          {/* Line total & Delete */}
-                          <div className="flex items-center gap-2.5">
+                          {/* Note Button, Item Total & Trash */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveNoteItemId(activeNoteItemId === id ? null : id)
+                              }
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-600 hover:text-rose-600 bg-white px-2 py-1 rounded-xl border border-zinc-200/80 shadow-2xs cursor-pointer active:scale-95 transition-all"
+                            >
+                              <MessageSquare className="w-3 h-3 text-rose-500" />
+                              <span>{note ? "Note" : "+ Note"}</span>
+                            </button>
+
                             <div className="text-right">
-                              <span className="text-[10px] text-zinc-400 font-medium mr-1">
-                                Total:
-                              </span>
                               <span className="text-sm font-black text-zinc-900 font-mono">
                                 ₹{itemTotal.toFixed(2)}
                               </span>
@@ -971,10 +1023,10 @@ export default function CartPage() {
                             <button
                               type="button"
                               onClick={() => handleRemoveItem(id)}
-                              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer active:scale-90"
                               title="Remove item"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
@@ -1182,6 +1234,44 @@ export default function CartPage() {
                   <Plus className="w-3.5 h-3.5" />
                   <span>Explore &amp; Add More Dishes</span>
                 </Link>
+              </div>
+
+              {/* Quick Coupon Strip for Mobile (< lg) */}
+              <div className="lg:hidden mt-3 bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-amber-500/10 border border-amber-300/60 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-2xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <Tag className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    {appliedCoupon ? (
+                      <div>
+                        <span className="text-xs font-black text-emerald-800 tracking-wide">
+                          {appliedCoupon.code} Applied!
+                        </span>
+                        <p className="text-[10px] text-emerald-700 truncate font-semibold">
+                          Saved ₹{discountAmount.toFixed(2)} with coupon
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xs font-black text-zinc-900">
+                          Coupons &amp; Offers
+                        </span>
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          {(availableCoupons || []).length} offers available to save more
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsCouponsModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-bold text-xs hover:bg-rose-50 active:scale-95 transition-all shrink-0 cursor-pointer shadow-2xs"
+                >
+                  {appliedCoupon ? "Change" : "Apply"}
+                </button>
               </div>
             </div>
 
@@ -1668,8 +1758,8 @@ export default function CartPage() {
               RIGHT COLUMN — Sticky Sidebar: Destination + Coupons + Bill Summary
           ═══════════════════════════════════════════════ */}
           <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 lg:sticky lg:top-36 space-y-4">
-            {/* 1. Quick Delivery Destination / Fulfillment Snapshot */}
-            <div className="bg-white rounded-3xl p-3.5 sm:p-4 border border-zinc-200/80 shadow-xs flex items-center justify-between gap-3">
+            {/* 1. Quick Delivery Destination / Fulfillment Snapshot (Desktop only to prevent mobile duplication) */}
+            <div className="hidden lg:flex bg-white rounded-3xl p-3.5 sm:p-4 border border-zinc-200/80 shadow-xs items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
                   {orderMode === "delivery" && <Bike className="w-4 h-4" />}
