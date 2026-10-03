@@ -38,7 +38,6 @@ import useCartLines from "@/hooks/useCartLines";
 import { computeCartTotals, CART_RULES } from "@/lib/cartRules";
 import { fullMenuCatalog } from "../menu/page";
 import api from "@/lib/axiosInstance";
-import { AuthModal } from "@/Component/AuthModal";
 import { openRazorpayModal } from "@/lib/razorpay";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -83,7 +82,7 @@ const POPULAR_BANKS = [
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { checkAuth } = useAuth() || {};
+  const { checkAuth, openAuthModal } = useAuth() || {};
   // ── Context: UI/preference state ──────────────────────────────────────────
   const {
     cartItems: contextCartItems,
@@ -189,7 +188,7 @@ export default function CheckoutPage() {
 
   // ── Payment Modal & State ─────────────────────────────────────────────────
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("upi");
+  const [paymentMethod, setPaymentMethod] = useState("razorpay");
   const [upiSubTab, setUpiSubTab] = useState("qr"); // "qr" | "id" | "app"
   const [upiProvider, setUpiProvider] = useState("gpay");
   const [upiIdInput, setUpiIdInput] = useState("");
@@ -217,7 +216,6 @@ export default function CheckoutPage() {
   const [paymentModalError, setPaymentModalError] = useState("");
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const [orderConfirmationModalOpen, setOrderConfirmationModalOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const selectedAddress =
     savedAddresses.find((a) => a.id === selectedAddressId) || savedAddresses[0];
@@ -253,7 +251,7 @@ export default function CheckoutPage() {
     }
     const userId = typeof window !== "undefined" ? localStorage.getItem("userid") : null;
     if (!userId) {
-      setAuthModalOpen(true);
+      openAuthModal?.("login", () => setIsPaymentModalOpen(true));
       return;
     }
     // Open Payment Popup Modal
@@ -424,7 +422,7 @@ export default function CheckoutPage() {
     const userId = typeof window !== "undefined" ? localStorage.getItem("userid") : null;
     if (!userId) {
       setPaymentModalError("Please log in to complete your order.");
-      setAuthModalOpen(true);
+      openAuthModal?.("login", () => setIsPaymentModalOpen(true));
       return;
     }
 
@@ -825,10 +823,10 @@ export default function CheckoutPage() {
         </div>
 
         {/* ── SELECTED ORDER MODE (Chosen in Cart) ────────────────────────── */}
-        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-zinc-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3.5">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 border border-zinc-200/80 shadow-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
             <div
-              className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-md ${
+              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-md ${
                 orderMode === "takeaway"
                   ? "bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-500/20"
                   : orderMode === "dinein"
@@ -845,32 +843,33 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-                  Fulfillment Mode (Chosen in Cart)
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                  Fulfillment Mode
                 </span>
                 {(orderMode === "takeaway" || orderMode === "dinein" || deliveryFee === 0) && (
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                    ₹0 Delivery Fee
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 leading-tight">
+                    <span className="sm:hidden">₹0 Fee</span>
+                    <span className="hidden sm:inline">₹0 Delivery Fee</span>
                   </span>
                 )}
               </div>
-              <h2 className="text-sm sm:text-base font-black text-zinc-900 mt-0.5">
+              <h2 className="text-xs sm:text-base font-black text-zinc-900 truncate mt-0.5">
                 {orderMode === "takeaway"
-                  ? "🥡 Takeaway • Self-Pickup at Counter"
+                  ? "Takeaway • Self-Pickup"
                   : orderMode === "dinein"
-                  ? "🍽️ Dine-In • Direct Table Service"
-                  : "🛵 Home Delivery • Fast Doorstep Delivery"}
+                  ? "Dine-In • Table Service"
+                  : "Home Delivery • Fast Doorstep"}
               </h2>
             </div>
           </div>
 
           <Link
             href="/cart"
-            className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline px-3 py-1.5 rounded-xl hover:bg-rose-50 transition-all flex items-center gap-1 self-start sm:self-center shrink-0"
+            className="text-[11px] sm:text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 shrink-0 active:scale-95"
           >
-            <span>Change in Cart</span>
+            <span>Change</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -1360,19 +1359,23 @@ export default function CheckoutPage() {
                   </div>
                 </div>
               ) : (
-                <>
-                  {/* Payment Method Selector Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  <>
+                  {/* Payment Method Selector — Razorpay (all online) or COD */}
+                  <div className="grid grid-cols-2 gap-3">
                     {[
-                      { id: "upi", label: "Instant UPI", sub: "Scan QR / Apps", icon: "⚡" },
-                      { id: "razorpay", label: "Razorpay", sub: "Cards, UPI, NetBanking", icon: "🔒" },
-                      { id: "card", label: "Cards", sub: "Debit / Credit", icon: "💳" },
-                      { id: "netbanking", label: "Net Banking", sub: "Top Banks", icon: "🏦" },
+                      {
+                        id: "razorpay",
+                        label: "Pay Online",
+                        sub: "Cards, UPI, NetBanking & Wallets",
+                        icon: "🔒",
+                        badge: "Recommended",
+                      },
                       {
                         id: "cod",
-                        label: orderMode === "dinein" ? "Pay at Table" : orderMode === "takeaway" ? "Pay on Pickup" : "COD",
-                        sub: "Cash / Scan at delivery",
+                        label: orderMode === "dinein" ? "Pay at Table" : orderMode === "takeaway" ? "Pay on Pickup" : "Cash on Delivery",
+                        sub: orderMode === "dinein" ? "Pay when served" : orderMode === "takeaway" ? "Pay at counter" : "Pay at your door",
                         icon: "💵",
+                        badge: null,
                       },
                     ].map((method) => {
                       const active = paymentMethod === method.id;
@@ -1384,323 +1387,47 @@ export default function CheckoutPage() {
                             setPaymentMethod(method.id);
                             setPaymentModalError("");
                           }}
-                          className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-2 relative overflow-hidden ${
                             active
                               ? "bg-rose-50/80 border-rose-500 ring-2 ring-rose-500/20 text-rose-950"
                               : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100"
                           }`}
                         >
-                          <div className="text-xl mb-1">{method.icon}</div>
+                          {method.badge && (
+                            <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[9px] font-black tracking-wide">
+                              {method.badge}
+                            </span>
+                          )}
+                          <div className="text-2xl">{method.icon}</div>
                           <div>
-                            <p className="text-xs font-black leading-tight">{method.label}</p>
-                            <p className="text-[10px] text-zinc-500 truncate">{method.sub}</p>
+                            <p className="text-sm font-black leading-tight">{method.label}</p>
+                            <p className="text-[11px] text-zinc-500 mt-0.5">{method.sub}</p>
                           </div>
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* ── METHOD 1: UPI & QR CODE ── */}
-                  {paymentMethod === "upi" && (
-                    <div className="bg-zinc-50 rounded-2xl p-4 sm:p-5 border border-zinc-200 space-y-4">
-                      {/* UPI Sub-tabs */}
-                      <div className="flex rounded-xl bg-zinc-200/80 p-1">
-                        <button
-                          type="button"
-                          onClick={() => setUpiSubTab("qr")}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            upiSubTab === "qr" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600 hover:text-zinc-900"
-                          }`}
-                        >
-                          Scan UPI QR
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setUpiSubTab("app")}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            upiSubTab === "app" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600 hover:text-zinc-900"
-                          }`}
-                        >
-                          UPI Apps
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setUpiSubTab("id")}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            upiSubTab === "id" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600 hover:text-zinc-900"
-                          }`}
-                        >
-                          Enter UPI ID
-                        </button>
-                      </div>
-
-                      {/* QR View */}
-                      {upiSubTab === "qr" && (
-                        <div className="text-center space-y-3 py-2">
-                          <div className="inline-block p-4 bg-white rounded-3xl border border-zinc-200 shadow-md">
-                            {/* Realistic SVG UPI QR Graphic */}
-                            <svg className="w-40 h-40 mx-auto" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <rect width="100" height="100" fill="white"/>
-                              {/* Position detection squares */}
-                              <rect x="10" y="10" width="24" height="24" rx="4" fill="#09090b"/>
-                              <rect x="14" y="14" width="16" height="16" rx="2" fill="white"/>
-                              <rect x="18" y="18" width="8" height="8" rx="1" fill="#e11d48"/>
-
-                              <rect x="66" y="10" width="24" height="24" rx="4" fill="#09090b"/>
-                              <rect x="70" y="14" width="16" height="16" rx="2" fill="white"/>
-                              <rect x="74" y="18" width="8" height="8" rx="1" fill="#e11d48"/>
-
-                              <rect x="10" y="66" width="24" height="24" rx="4" fill="#09090b"/>
-                              <rect x="14" y="70" width="16" height="16" rx="2" fill="white"/>
-                              <rect x="18" y="74" width="8" height="8" rx="1" fill="#e11d48"/>
-
-                              {/* Matrix data dots */}
-                              <rect x="38" y="12" width="6" height="6" rx="1" fill="#18181b"/>
-                              <rect x="48" y="12" width="6" height="6" rx="1" fill="#18181b"/>
-                              <rect x="58" y="12" width="4" height="6" rx="1" fill="#18181b"/>
-                              <rect x="38" y="22" width="8" height="6" rx="1" fill="#18181b"/>
-                              <rect x="50" y="22" width="12" height="6" rx="1" fill="#18181b"/>
-
-                              <rect x="12" y="38" width="6" height="8" rx="1" fill="#18181b"/>
-                              <rect x="22" y="38" width="8" height="6" rx="1" fill="#18181b"/>
-                              <rect x="34" y="38" width="8" height="8" rx="1" fill="#18181b"/>
-                              <rect x="46" y="36" width="10" height="10" rx="2" fill="#e11d48"/>
-                              <rect x="60" y="38" width="8" height="6" rx="1" fill="#18181b"/>
-                              <rect x="72" y="38" width="16" height="6" rx="1" fill="#18181b"/>
-
-                              <rect x="12" y="50" width="18" height="6" rx="1" fill="#18181b"/>
-                              <rect x="34" y="50" width="8" height="8" rx="1" fill="#18181b"/>
-                              <rect x="60" y="50" width="10" height="6" rx="1" fill="#18181b"/>
-                              <rect x="76" y="50" width="12" height="6" rx="1" fill="#18181b"/>
-
-                              <rect x="38" y="66" width="6" height="8" rx="1" fill="#18181b"/>
-                              <rect x="48" y="66" width="10" height="6" rx="1" fill="#18181b"/>
-                              <rect x="62" y="66" width="8" height="8" rx="1" fill="#18181b"/>
-                              <rect x="74" y="66" width="14" height="6" rx="1" fill="#18181b"/>
-
-                              <rect x="38" y="78" width="12" height="8" rx="1" fill="#18181b"/>
-                              <rect x="54" y="78" width="8" height="8" rx="1" fill="#18181b"/>
-                              <rect x="66" y="78" width="22" height="8" rx="1" fill="#18181b"/>
-                            </svg>
-                            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-1">UPI QR • Tastora Kitchen</p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-xs font-bold text-zinc-800">
-                              Scan with Google Pay, PhonePe, Paytm, BHIM or Cred
-                            </p>
-                            <p className="text-[11px] text-zinc-500">
-                              Exact Amount: <span className="font-mono font-bold text-rose-600">₹{grandTotal.toFixed(2)}</span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* App View */}
-                      {upiSubTab === "app" && (
-                        <div className="space-y-3">
-                          <p className="text-xs font-bold text-zinc-700">Choose your UPI App:</p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                            {[
-                              { id: "gpay", label: "Google Pay", icon: "🌐" },
-                              { id: "phonepe", label: "PhonePe", icon: "🟣" },
-                              { id: "paytm", label: "Paytm", icon: "🔵" },
-                              { id: "bhim", label: "BHIM UPI", icon: "🇮🇳" },
-                            ].map((app) => (
-                              <button
-                                key={app.id}
-                                type="button"
-                                onClick={() => setUpiProvider(app.id)}
-                                className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
-                                  upiProvider === app.id
-                                    ? "bg-zinc-900 text-white border-zinc-900 shadow-md"
-                                    : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100"
-                                }`}
-                              >
-                                <span className="text-xl block mb-1">{app.icon}</span>
-                                <span className="text-xs font-bold block">{app.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                          <p className="text-[11px] text-zinc-500 text-center">
-                            Your payment will open directly in {upiProvider.toUpperCase()}.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* ID View */}
-                      {upiSubTab === "id" && (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-xs font-bold text-zinc-700 block mb-1">Enter UPI ID (VPA) *</label>
-                            <input
-                              type="text"
-                              value={upiIdInput}
-                              onChange={(e) => setUpiIdInput(e.target.value)}
-                              placeholder="e.g. mobile@okhdfcbank or user@paytm"
-                              className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-300 text-xs font-semibold focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                            />
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-zinc-400">Quick suggestions:</span>
-                            {["@okhdfcbank", "@oksbi", "@paytm", "@ybl", "@axl"].map((sug) => (
-                              <button
-                                key={sug}
-                                type="button"
-                                onClick={() => {
-                                  const base = upiIdInput.includes("@") ? upiIdInput.split("@")[0] : upiIdInput || "myname";
-                                  setUpiIdInput(base + sug);
-                                }}
-                                className="px-2 py-0.5 rounded-lg bg-zinc-200 text-zinc-700 text-[10px] font-bold hover:bg-zinc-300 transition-colors"
-                              >
-                                {sug}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── METHOD 2: CARDS ── */}
-                  {paymentMethod === "card" && (
-                    <div className="bg-zinc-50 rounded-2xl p-4 sm:p-5 border border-zinc-200 space-y-4">
-                      {/* Card Graphic */}
-                      <div className="bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 rounded-2xl p-4 text-white shadow-lg space-y-3">
-                        <div className="flex items-center justify-between text-xs font-bold text-zinc-400">
-                          <span className="tracking-widest">TASTORA PASS</span>
-                          <span className="text-rose-400 font-mono">SECURE</span>
-                        </div>
-                        <p className="font-mono text-sm sm:text-base tracking-widest text-zinc-200">
-                          {cardDetails.number || "•••• •••• •••• ••••"}
-                        </p>
-                        <div className="flex items-center justify-between text-[11px] text-zinc-400 font-medium">
-                          <div>
-                            <p className="text-[9px] uppercase tracking-wider text-zinc-500">Cardholder</p>
-                            <p className="font-bold text-white uppercase">{cardDetails.name || "YOUR NAME"}</p>
-                          </div>
-                          <div>
-                            <p className="text-[9px] uppercase tracking-wider text-zinc-500">Expires</p>
-                            <p className="font-bold font-mono text-white">{cardDetails.expiry || "MM/YY"}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-[11px] font-bold text-zinc-700 block mb-1">Card Number *</label>
-                          <input
-                            type="text"
-                            maxLength={19}
-                            value={cardDetails.number}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/\D/g, "").slice(0, 16);
-                              const formatted = raw.match(/.{1,4}/g)?.join(" ") || raw;
-                              setCardDetails({ ...cardDetails, number: formatted });
-                            }}
-                            placeholder="4532 0182 9382 8920"
-                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-300 text-xs font-mono font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] font-bold text-zinc-700 block mb-1">Cardholder Name *</label>
-                          <input
-                            type="text"
-                            value={cardDetails.name}
-                            onChange={(e) => setCardDetails({ ...cardDetails, name: e.target.value })}
-                            placeholder="Name as printed on card"
-                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-300 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[11px] font-bold text-zinc-700 block mb-1">Expiry (MM/YY) *</label>
-                            <input
-                              type="text"
-                              maxLength={5}
-                              placeholder="08/28"
-                              value={cardDetails.expiry}
-                              onChange={(e) => {
-                                let val = e.target.value.replace(/\D/g, "");
-                                if (val.length > 2) val = val.slice(0, 2) + "/" + val.slice(2, 4);
-                                setCardDetails({ ...cardDetails, expiry: val });
-                              }}
-                              className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-300 text-xs font-mono focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-bold text-zinc-700 block mb-1">CVV *</label>
-                            <input
-                              type="password"
-                              maxLength={4}
-                              placeholder="•••"
-                              value={cardDetails.cvv}
-                              onChange={(e) => setCardDetails({ ...cardDetails, cvv: e.target.value.replace(/\D/g, "") })}
-                              className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-300 text-xs font-mono focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── METHOD 3: NET BANKING ── */}
-                  {paymentMethod === "netbanking" && (
-                    <div className="bg-zinc-50 rounded-2xl p-4 sm:p-5 border border-zinc-200 space-y-4">
-                      <p className="text-xs font-bold text-zinc-700">Select Your Bank:</p>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {POPULAR_BANKS.map((b) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            onClick={() => setSelectedBank(b.id)}
-                            className={`p-3 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                              selectedBank === b.id
-                                ? "bg-white border-rose-500 ring-2 ring-rose-500/20 shadow-sm"
-                                : "bg-white border-zinc-200 hover:bg-zinc-100"
-                            }`}
-                          >
-                            <span className="text-xl">{b.logo}</span>
-                            <span className="text-xs font-bold text-zinc-800">{b.name}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-600 block mb-1">Or choose other bank</label>
-                        <select
-                          value={selectedBank}
-                          onChange={(e) => setSelectedBank(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-300 text-xs font-semibold focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                        >
-                          <option value="HDFC">HDFC Bank</option>
-                          <option value="ICICI">ICICI Bank</option>
-                          <option value="SBI">State Bank of India</option>
-                          <option value="AXIS">Axis Bank</option>
-                          <option value="KOTAK">Kotak Mahindra Bank</option>
-                          <option value="PNB">Punjab National Bank</option>
-                          <option value="BOB">Bank of Baroda</option>
-                          <option value="INDUS">IndusInd Bank</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── METHOD 2: RAZORPAY GATEWAY ── */}
+                  {/* ── RAZORPAY INFO PANEL ── */}
                   {paymentMethod === "razorpay" && (
-                    <div className="bg-gradient-to-br from-indigo-50/80 to-blue-50/80 rounded-2xl p-4 sm:p-5 border border-indigo-200 space-y-4">
+                    <div className="bg-gradient-to-br from-indigo-50/80 to-blue-50/80 rounded-2xl p-4 sm:p-5 border border-indigo-200 space-y-3">
                       <div className="flex items-start gap-3">
                         <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-xl shrink-0 shadow-md shadow-indigo-500/20">
                           🛡️
                         </div>
                         <div className="flex-1">
-                          <h4 className="text-xs font-black text-indigo-950">Official Razorpay Checkout</h4>
+                          <h4 className="text-xs font-black text-indigo-950">Official Razorpay Secure Checkout</h4>
                           <p className="text-[11px] text-indigo-700 mt-0.5 leading-relaxed">
-                            Pay securely with Razorpay's trusted gateway. Supports all Debit/Credit Cards, UPI (GPay, PhonePe, Paytm), Net Banking, and Mobile Wallets.
+                            Pay with any Debit/Credit Card, UPI (GPay, PhonePe, Paytm, BHIM), Net Banking, or Mobile Wallet — all in one trusted gateway.
                           </p>
                         </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {["💳 Card", "⚡ UPI", "🏦 NetBanking", "👛 Wallets"].map((tag) => (
+                          <span key={tag} className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                            {tag}
+                          </span>
+                        ))}
                       </div>
                       <div className="p-3 bg-white/90 rounded-xl border border-indigo-100 flex items-center justify-between text-xs">
                         <span className="font-bold text-zinc-700">Amount to Pay</span>
@@ -1709,7 +1436,7 @@ export default function CheckoutPage() {
                     </div>
                   )}
 
-                  {/* ── METHOD 4: COD / PAY AT RESTAURANT ── */}
+                  {/* ── COD / PAY AT RESTAURANT ── */}
                   {paymentMethod === "cod" && (
                     <div className="bg-amber-50/80 rounded-2xl p-4 sm:p-5 border border-amber-200 space-y-3">
                       <div className="flex items-start gap-3">
@@ -1723,7 +1450,7 @@ export default function CheckoutPage() {
                               : "Cash on Doorstep Delivery"}
                           </h4>
                           <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
-                            No upfront payment required. You can pay via Cash or scan our Delivery Partner / Server QR Code when you receive your order.
+                            No upfront payment required. Pay via Cash or scan our QR code when you receive your order.
                           </p>
                         </div>
                       </div>
@@ -1771,9 +1498,7 @@ export default function CheckoutPage() {
                     <span>
                       {paymentMethod === "cod"
                         ? "Confirm Order (COD)"
-                        : paymentMethod === "razorpay"
-                        ? `Launch Razorpay • ₹${grandTotal.toFixed(2)}`
-                        : `Pay ₹${grandTotal.toFixed(2)} Securely`}
+                        : `Launch Razorpay • ₹${grandTotal.toFixed(2)}`}
                     </span>
                   </button>
                 </div>
@@ -1782,6 +1507,7 @@ export default function CheckoutPage() {
           </div>
         </div>
       )}
+
 
       {/* ── ADD NEW ADDRESS MODAL ──────────────────────────────────────────────── */}
       {isNewAddressOpen && (
@@ -1917,17 +1643,6 @@ export default function CheckoutPage() {
           </div>
         </div>
       )}
-
-      {/* ── AUTH MODAL ──────────────────────────────────────────────────────── */}
-      <AuthModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        initialMode="login"
-        onAuthSuccess={() => {
-          setAuthModalOpen(false);
-          setIsPaymentModalOpen(true);
-        }}
-      />
     </div>
   );
 }

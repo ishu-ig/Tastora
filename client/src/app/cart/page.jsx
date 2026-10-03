@@ -10,6 +10,7 @@ import {
   Plus,
   Minus,
   ArrowRight,
+  ChevronLeft,
   ChevronRight,
   Sparkles,
   Tag,
@@ -47,6 +48,10 @@ import useCartLines from "@/hooks/useCartLines";
 import useCartWishlist from "@/hooks/useCartWishlist";
 import { mapProductToDish } from "@/lib/MenuDish";
 import { computeCartTotals, CART_RULES } from "@/lib/cartRules";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation as SwiperNavigation } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/navigation";
 
 export default function CartPage() {
   const GEOAPIFY_API_KEY = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY || "";
@@ -179,8 +184,12 @@ export default function CartPage() {
     const pref = /dessert|beverage|drink|bread|naan|side|sweet|lassi/i;
     const picks = all.filter((d) => pref.test(d.mainCategory) || pref.test(d.subCategory));
     const rest = all.filter((d) => !picks.includes(d));
-    return [...picks, ...rest].slice(0, 4);
+    return [...picks, ...rest].slice(0, 10);
   }, [productState]);
+
+  const [fatSwiper, setFatSwiper] = useState(null);
+  const [fatIsBeginning, setFatIsBeginning] = useState(true);
+  const [fatIsEnd, setFatIsEnd] = useState(false);
 
   const [couponInput, setCouponInput] = useState("");
   const [couponError, setCouponError] = useState("");
@@ -1564,37 +1573,93 @@ export default function CartPage() {
             )}
 
             {/* Frequently Added Together Recommendations */}
-            <div className="bg-white rounded-3xl p-4 sm:p-6 border border-zinc-200/80 shadow-xs space-y-3.5 sm:space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-500">
-                    Frequently Added Together
-                  </h3>
-                  <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
-                    Complete your meal with fresh sides, lassis &amp; hot desserts.
-                  </p>
+            {recommended.length > 0 && (
+              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-zinc-200/80 shadow-xs space-y-3.5 sm:space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-500">
+                      Frequently Added Together
+                    </h3>
+                    <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
+                      Complete your meal with fresh sides, lassis &amp; hot desserts.
+                    </p>
+                  </div>
+
+                  {/* Navigation Arrows for Swiper */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => fatSwiper?.slidePrev()}
+                      disabled={fatIsBeginning}
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-600 text-zinc-600 border border-zinc-200/90 flex items-center justify-center transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+                      aria-label="Previous recommendations"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fatSwiper?.slideNext()}
+                      disabled={fatIsEnd}
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-600 text-zinc-600 border border-zinc-200/90 flex items-center justify-center transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+                      aria-label="Next recommendations"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="w-full">
+                  <Swiper
+                    key={recommended.length}
+                    modules={[SwiperNavigation]}
+                    onSwiper={(swiper) => {
+                      setFatSwiper(swiper);
+                      setFatIsBeginning(swiper.isBeginning);
+                      setFatIsEnd(swiper.isEnd);
+                    }}
+                    onSlideChange={(swiper) => {
+                      setFatIsBeginning(swiper.isBeginning);
+                      setFatIsEnd(swiper.isEnd);
+                    }}
+                    slidesPerView={2}
+                    spaceBetween={10}
+                    breakpoints={{
+                      640: {
+                        slidesPerView: 3,
+                        spaceBetween: 14,
+                      },
+                      1024: {
+                        slidesPerView: 3,
+                        spaceBetween: 14,
+                      },
+                      1280: {
+                        slidesPerView: 4,
+                        spaceBetween: 14,
+                      },
+                    }}
+                    className="w-full !py-1"
+                  >
+                    {recommended.map((dish) => (
+                      <SwiperSlide key={dish.id || dish._id} className="!h-auto flex">
+                        <div className="w-full h-full flex flex-col [&>div]:h-full">
+                          <Menucard
+                            dish={dish}
+                            viewMode="grid"
+                            inCart={isInCart(dish)}
+                            qty={getQty(dish)}
+                            getQtyForDish={getQty}
+                            inWishlist={isInWishlist(dish)}
+                            onAddToCart={addToCart}
+                            onUpdateQty={updateQty}
+                            onToggleWishlist={addToWishlist}
+                          />
+                        </div>
+                      </SwiperSlide>
+                    ))}
+                  </Swiper>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
-                {recommended.map((dish) => {
-                  return (
-                    <Menucard
-                      key={dish.id}
-                      dish={dish}
-                      viewMode="grid"
-                      inCart={isInCart(dish)}
-                      qty={getQty(dish)}
-                      getQtyForDish={getQty}
-                      inWishlist={isInWishlist(dish)}
-                      onAddToCart={addToCart}
-                      onUpdateQty={updateQty}
-                      onToggleWishlist={addToWishlist}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+            )}
 
             {/* end left column */}
           </div>
@@ -2093,59 +2158,7 @@ export default function CartPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label htmlFor="address-location-search" className="text-xs font-bold text-zinc-700 block">
-                    Find your location
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      id="address-location-search"
-                      type="search"
-                      role="combobox"
-                      aria-autocomplete="list"
-                      aria-expanded={locationSuggestions.length > 0}
-                      value={locationQuery}
-                      onChange={handleQueryChange}
-                      placeholder="Search street, building, or area"
-                      className="min-w-0 flex-1 px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleUseCurrentLocation}
-                      disabled={locationLoading}
-                      className="shrink-0 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 disabled:opacity-60"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Navigation className="h-3.5 w-3.5" />
-                        {locationLoading ? "Locating…" : "Use my location"}
-                      </span>
-                    </button>
-                  </div>
-                  {locationSuggestions.length > 0 && (
-                    <ul role="listbox" className="max-h-48 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg">
-                      {locationSuggestions.map((feature, index) => (
-                        <li key={`${feature.properties?.place_id || feature.properties?.formatted}-${index}`}>
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected="false"
-                            onClick={() => applyLocationFeature(feature)}
-                            className="w-full px-3 py-2.5 text-left text-xs text-zinc-800 hover:bg-rose-50"
-                          >
-                            <span className="block font-bold">{feature.properties?.address_line1 || feature.properties?.name || feature.properties?.formatted}</span>
-                            {feature.properties?.address_line2 && (
-                              <span className="mt-0.5 block text-[11px] text-zinc-500">{feature.properties.address_line2}</span>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {locationLoading && locationQuery.length >= 3 && (
-                    <p className="text-[11px] text-zinc-500">Searching addresses…</p>
-                  )}
-                  {locationError && <p role="status" className="text-[11px] text-rose-600">{locationError}</p>}
-                </div>
+
 
                 {/* Complete Street Address */}
                 <div>

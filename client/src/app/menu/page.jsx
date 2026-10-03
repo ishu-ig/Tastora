@@ -1235,6 +1235,27 @@ function MenuPageContent() {
   const subcategoryParam = searchParams.get("subcategory") || searchParams.get("sub");
   const searchQuery = searchParams.get("search") || "";
 
+  // Local search state — synced with URL, used by the search input on the page
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+
+  // Keep input in sync when URL changes (e.g. Navbar navigates to /menu?search=...)
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  // Update URL search param when user types in the on-page search box
+  const handleSearchInput = (value) => {
+    setLocalSearch(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value.trim()) {
+      params.set("search", value.trim());
+    } else {
+      params.delete("search");
+    }
+    const query = params.toString();
+    router.replace(query ? `/menu?${query}` : "/menu", { scroll: false });
+  };
+
   // ------------------------------------------
   // FILTER STATES
   // ------------------------------------------
@@ -1618,6 +1639,31 @@ function MenuPageContent() {
               </p>
             </div>
 
+          </div>
+
+
+          {/* SEARCH BAR */}
+          <div className="mt-5 relative max-w-2xl">
+            <Search className="w-5 h-5 text-rose-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="menu-search-input"
+              type="text"
+              value={localSearch}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              placeholder="Search dishes, ingredients, categories…"
+              aria-label="Search menu dishes"
+              className="w-full pl-11 pr-12 py-3 rounded-2xl border border-zinc-200 bg-white text-sm text-zinc-800 placeholder-zinc-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500/25 focus:border-rose-400 hover:border-zinc-300 transition-colors"
+            />
+            {localSearch && (
+              <button
+                type="button"
+                onClick={() => handleSearchInput("")}
+                aria-label="Clear search"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-rose-600 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* MOBILE TOOLBAR (Filter trigger, counts & sorting for mobile screens) */}

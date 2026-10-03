@@ -24,7 +24,7 @@ const looksLikeMongoId = (value) => /^[a-fA-F0-9]{24}$/.test(String(value || "")
 export default function useCartWishlist() {
     const dispatch = useDispatch();
     const router = useRouter();
-    const { user: authUser, loading: authLoading } = useAuth() || {};
+    const { user: authUser, loading: authLoading, openAuthModal } = useAuth() || {};
     const authUserId = authUser?._id || null;
 
     const CartStateData = useSelector((s) => s.CartStateData);
@@ -139,7 +139,7 @@ export default function useCartWishlist() {
     const addToCart = useCallback(
         (dish, qty = 1) => {
             const uid = authUserId || getUid();
-            if (!uid) return router.push("/login");
+            if (!uid) { if (openAuthModal) openAuthModal("login"); return; }
             if (!dish) return;
 
             const variant = variantOf(dish);
@@ -225,7 +225,7 @@ export default function useCartWishlist() {
     const addToWishlist = useCallback(
         (dish) => {
             const uid = authUserId || getUid();
-            if (!uid) return router.push("/login");
+            if (!uid) { if (openAuthModal) openAuthModal("login"); return; }
             if (!dish) return;
 
             const productId = dishIdOf(dish);

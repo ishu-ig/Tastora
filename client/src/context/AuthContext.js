@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import api from "../lib/axiosInstance";
 
 const AuthContext = createContext(null);
@@ -9,18 +9,36 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    // ------------------------------------------
+    // GLOBAL AUTH MODAL STATE
+    // Any component can call openAuthModal() to show the
+    // login/signup modal without navigating to /login.
+    // Pass an optional onSuccess callback to run after login.
+    // ------------------------------------------
+    const [authModalOpen, setAuthModalOpen] = useState(false);
+    const [authModalMode, setAuthModalMode] = useState("login"); // "login" | "signup"
+    const authSuccessCallbackRef = useRef(null);
+
+    const openAuthModal = useCallback((mode = "login", onSuccess = null) => {
+        authSuccessCallbackRef.current = onSuccess || null;
+        setAuthModalMode(mode);
+        setAuthModalOpen(true);
+    }, []);
+
+    const closeAuthModal = useCallback(() => {
+        setAuthModalOpen(false);
+        authSuccessCallbackRef.current = null;
+    }, []);
+
     useEffect(() => {
         checkAuth();
     }, []);
 
     async function checkAuth() {
         try {
-            // The axios interceptor reads token from localStorage and attaches it
-            // as Authorization + token headers, so this works cross-origin.
             const res = await api.get("/auth/me");
             const userData = res.data?.data;
             if (userData) {
-                // Debug: log coin value so we can confirm the server is returning it
                 if (process.env.NODE_ENV !== "production") {
                     console.log("[AuthContext] /auth/me cridetCoin:", userData.cridetCoin, "| creditCoins:", userData.creditCoins);
                 }
@@ -28,8 +46,6 @@ export function AuthProvider({ children }) {
                 return userData;
             }
         } catch (err) {
-            // /auth/me failed (token expired, no token, network error).
-            // Try fallback: fetch by stored userid.
             if (typeof window !== "undefined") {
                 const storedId = localStorage.getItem("userid");
                 if (storedId) {
@@ -54,13 +70,10 @@ export function AuthProvider({ children }) {
         }
     }
 
-    // loginUser: directly set user state immediately after login
-    // (called from AuthModal's onAuthSuccess so the Navbar updates instantly)
     function loginUser(userData) {
         setUser(userData);
     }
 
-    // logoutUser: clear state and localStorage
     function logoutUser() {
         if (typeof window !== "undefined") {
             localStorage.removeItem("token");
@@ -71,7 +84,22 @@ export function AuthProvider({ children }) {
     }
 
     return (
-        <AuthContext.Provider value={{ user, loading, checkAuth, setUser, loginUser, logoutUser }}>
+        <AuthContext.Provider
+            value={{
+                user,
+                loading,
+                checkAuth,
+                setUser,
+                loginUser,
+                logoutUser,
+                // Global auth modal controls
+                authModalOpen,
+                authModalMode,
+                authSuccessCallbackRef,
+                openAuthModal,
+                closeAuthModal,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );

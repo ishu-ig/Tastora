@@ -28,6 +28,7 @@ export function TastoraIcon({ size = 40, className = "" }) {
 export function TastoraLogo({
   size = 40,
   showText = true,
+  hideTextOnMobile = false,
   subtitle = "Gourmet Dining",
   className = "",
   textColor = "text-zinc-900",
@@ -49,7 +50,7 @@ export function TastoraLogo({
       </div>
 
       {showText && (
-        <div className="flex flex-col">
+        <div className={`flex flex-col ${hideTextOnMobile ? "hidden sm:flex" : ""}`}>
           <span className={`text-2xl font-black tracking-tight ${textColor} flex items-center gap-0.5 leading-none`}>
             TAST<span className="text-[#E11D48]">ORA</span>
             <span className="w-2 h-2 rounded-full bg-[#FFB800] animate-pulse inline-block ml-0.5" />

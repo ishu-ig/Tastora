@@ -744,8 +744,27 @@ function CombosContent() {
   // ------------------------------------------
   // STATE
   // ------------------------------------------
+  const [localSearch, setLocalSearch] = useState(urlSearchQuery);
   const searchQuery = urlSearchQuery;
   const typeFilter = ["combo", "thali"].includes(urlTypeFilter) ? urlTypeFilter : "all";
+
+  // Keep local input in sync when URL changes (e.g. Navbar navigation)
+  useEffect(() => {
+    setLocalSearch(urlSearchQuery);
+  }, [urlSearchQuery]);
+
+  // Update URL search param on input change (debounced via direct set)
+  const handleSearchInput = (value) => {
+    setLocalSearch(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value.trim()) {
+      params.set("search", value.trim());
+    } else {
+      params.delete("search");
+    }
+    const query = params.toString();
+    router.replace(query ? `/combos?${query}` : "/combos", { scroll: false });
+  };
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedServing, setSelectedServing] = useState("all");
   const [selectedPriceTier, setSelectedPriceTier] = useState("all");
@@ -890,10 +909,11 @@ function CombosContent() {
       .filter((combo) => {
         if (q) {
           const hit =
-            combo.title.toLowerCase().includes(q) ||
-            combo.shortDesc.toLowerCase().includes(q) ||
-            combo.tags.some((t) => t.toLowerCase().includes(q)) ||
-            combo.itemsIncluded.some((item) =>
+            (combo.title || "").toLowerCase().includes(q) ||
+            (combo.shortDesc || "").toLowerCase().includes(q) ||
+            (combo.fullDesc || "").toLowerCase().includes(q) ||
+            (combo.tags || []).some((t) => (t || "").toLowerCase().includes(q)) ||
+            (combo.itemsIncluded || []).some((item) =>
               (typeof item === "string" ? item : (item?.customName || item?.name || "")).toLowerCase().includes(q)
             );
           if (!hit) return false;
@@ -1153,6 +1173,30 @@ function CombosContent() {
 
         {/* SEARCH & TOOLBAR */}
         <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-zinc-200/90 shadow-2xs space-y-3">
+          {/* Search Input Row */}
+          <div className="relative w-full">
+            <Search className="w-4 h-4 text-rose-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="combos-search-input"
+              type="text"
+              value={localSearch}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              placeholder="Search combos, thalis, ingredients…"
+              aria-label="Search combos and thalis"
+              className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-500/25 focus:border-rose-400 hover:border-zinc-300 transition-colors"
+            />
+            {localSearch && (
+              <button
+                type="button"
+                onClick={() => handleSearchInput("")}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
           <div className="flex flex-col md:flex-row items-center justify-between gap-3">
             {/* Sort, view mode, mobile filters */}
             <div className="flex items-center gap-2.5 w-full md:w-auto justify-between md:justify-end overflow-x-auto">

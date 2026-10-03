@@ -35,6 +35,7 @@ import {
   Utensils,
   Percent,
   Calendar,
+  Info,
 } from "lucide-react";
 import { FaFacebookF, FaInstagram, FaTiktok, FaYoutube } from "react-icons/fa6";
 import { AuthModal } from "./AuthModal";
@@ -79,9 +80,7 @@ export function Navbar() {
   const coinRef = useRef(null);
 
   // Auth Context Integration
-  const { user: authUser, setUser: setAuthUser, checkAuth } = useAuth() || {};
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState("signup"); // "login" | "signup"
+  const { user: authUser, setUser: setAuthUser, checkAuth, openAuthModal } = useAuth() || {};
 
   // Active Authenticated User (null if not signed in)
   const currentUser = authUser
@@ -273,22 +272,19 @@ export function Navbar() {
   const navLinks = [
     { name: "Home", href: "/" },
     { name: "Menu", href: "/menu" },
-    { name: "Combos", href: "/combos" },
-    { name: "reserve table ", href: "/reserve" },
-    { name: "About Us", href: "/about#about" },
-    // { name: "Special Deals", href: "/#special" },
-    { name: "ContactUs", href: "/about#contact-section" },
+    { name: "Combo & Thali", href: "/combos" },
+    { name: "Reserve Table", href: "/reserve" },
+    { name: "About & Contact", href: "/about" },
   ];
 
   const mobileNavItems = [
     { name: "Home", href: "/", icon: Home, badge: null },
     { name: "Explore Menu", href: "/menu", icon: Utensils, badge: "Hot" },
-    { name: "Royal Combos & Thalis", href: "/combos", icon: Crown, badge: "Chef Special" },
+    { name: "Combo & Thali", href: "/combos", icon: Crown, badge: "Chef Special" },
     // { name: "VIP Membership", href: "/membership", icon: Crown, badge: isMember ? "Active" : "Join VIP" },
     { name: "Reserve a Table", href: "/reserve", icon: Calendar, badge: "Instant" },
     { name: "Special Deals & Offers", href: "/#special", icon: Percent, badge: "Save 20%" },
-    { name: "About Our Heritage", href: "/about#about", icon: Sparkles, badge: null },
-    { name: "Contact & Location", href: "/about#contact-section", icon: Phone, badge: null },
+    { name: "About & Contact", href: "/about", icon: Info, badge: null },
   ];
 
   return (
@@ -307,7 +303,7 @@ export function Navbar() {
               href="/"
               className="flex items-center gap-2.5 group focus:outline-none shrink-0"
             >
-              <TastoraLogo size={38} subtitle="Pure Gourmet Dining" />
+              <TastoraLogo size={38} subtitle="Pure Gourmet Dining" hideTextOnMobile />
             </Link>
 
             {/* RESPONSIVE NAVIGATION LINKS (Adaptive for Tablet & Desktop) */}
@@ -334,7 +330,7 @@ export function Navbar() {
                 href="/combos"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group flex items-center gap-1"
               >
-                <span>Combos</span>
+                <span>Combo &amp; Thali</span>
                 {/* <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[9px] font-extrabold hidden xl:inline-block">
                   Feasts
                 </span> */}
@@ -348,21 +344,14 @@ export function Navbar() {
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
               </Link>
 
-              {/* Secondary links (Visible on large screens, or clean tablet spacing) */}
-              <a
-                href="/about#about"
-                className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden xl:inline-block"
-              >
-                About Us
-                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a>
-              <a
-                href="/about#contact-section"
+              {/* Combined About & Contact Us link */}
+              <Link
+                href="/about"
                 className="text-xs lg:text-sm font-bold text-zinc-700 hover:text-rose-600 transition-colors relative py-1 group hidden lg:inline-block"
               >
-                Contact Us
+                <span>About &amp; Contact</span>
                 <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-rose-600 to-amber-500 group-hover:w-full transition-all duration-300 rounded-full" />
-              </a>
+              </Link>
             </nav>
 
             {/* RIGHT SIDE ACTIONS (Coins + Cart + Profile) */}
@@ -548,20 +537,14 @@ export function Navbar() {
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => {
-                        setAuthMode("login");
-                        setAuthModalOpen(true);
-                      }}
+                      onClick={() => openAuthModal?.("login")}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-zinc-700 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <LogIn className="w-3.5 h-3.5" />
                       <span>Sign In</span>
                     </button>
                     <button
-                      onClick={() => {
-                        setAuthMode("signup");
-                        setAuthModalOpen(true);
-                      }}
+                      onClick={() => openAuthModal?.("signup")}
                       className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white text-xs font-bold shadow-sm hover:shadow-md transition-all cursor-pointer"
                     >
                       <UserPlus className="w-3.5 h-3.5" />
@@ -1191,8 +1174,7 @@ export function Navbar() {
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   onClick={() => {
-                    setAuthMode("login");
-                    setAuthModalOpen(true);
+                    openAuthModal?.("login");
                     setMobileMenuOpen(false);
                   }}
                   className="w-full py-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white text-xs font-bold transition-all text-center shadow-xs cursor-pointer active:scale-95 flex items-center justify-center gap-1"
@@ -1202,8 +1184,7 @@ export function Navbar() {
                 </button>
                 <button
                   onClick={() => {
-                    setAuthMode("signup");
-                    setAuthModalOpen(true);
+                    openAuthModal?.("signup");
                     setMobileMenuOpen(false);
                   }}
                   className="w-full py-2 rounded-xl bg-zinc-800/90 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-xs font-semibold transition-all text-center cursor-pointer active:scale-95 flex items-center justify-center gap-1"
@@ -1349,18 +1330,6 @@ export function Navbar() {
         </div>
       </aside>
 
-      <AuthModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        initialMode={authMode}
-        onAuthSuccess={(user) => {
-          if (user) {
-            if (setAuthUser) setAuthUser(user);
-            if (checkAuth) checkAuth();
-          }
-          setProfileDropdownOpen(false);
-        }}
-      />
     </header>
   );
 }

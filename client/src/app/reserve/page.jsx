@@ -282,7 +282,7 @@ export default function ReservePage() {
     rateReservation,
     userProfile,
   } = useCart();
-  const { user: authUser } = useAuth() || {};
+  const { user: authUser, openAuthModal } = useAuth() || {};
 
   // Navigation tab: "book" or "history"
   const [activeTab, setActiveTab] = useState("book");
@@ -1705,13 +1705,17 @@ export default function ReservePage() {
                 >
                   Cancel
                 </button>
-                <Link
-                  href="/login"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginModal({ visible: false, message: "" });
+                    openAuthModal("login");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>Log in</span>
-                </Link>
+                </button>
               </div>
             </div>
           </div>
