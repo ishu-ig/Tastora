@@ -64,7 +64,7 @@ export function Navbar() {
     pathname?.startsWith("/cart") ||
     pathname?.startsWith("/checkout");
 
-  const { favorites, membership, isMember } = useCart();
+  const { favorites, membership, isMember, savedAddresses: cartAddresses, selectedAddressId, setSelectedAddressId } = useCart();
   const coinsBalance = useCreditCoins();
   const { cartCount } = useCartWishlist();
   const [isScrolled, setIsScrolled] = useState(false);
@@ -118,10 +118,22 @@ export function Navbar() {
     }
   };
 
-  // Customer Saved Addresses
-  const savedAddresses = [];
+  // Customer Saved Addresses — pulled from CartContext (server-synced)
+  const savedAddresses = (cartAddresses || []).map((a) => ({
+    ...a,
+    fullAddress: [a.addressLine, a.city, a.state].filter(Boolean).join(", "),
+  }));
 
   const [selectedAddress, setSelectedAddress] = useState(null);
+
+  // Auto-select the default/first address when addresses load
+  useEffect(() => {
+    if (selectedAddress || savedAddresses.length === 0) return;
+    const def = savedAddresses.find((a) => a.isDefault) || savedAddresses[0];
+    if (def) setSelectedAddress(def);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedAddresses.length]);
+
   const activeAddress = selectedAddress ?? savedAddresses[0] ?? null;
 
   const profileRef = useRef(null);

@@ -6,6 +6,7 @@ const Product = require("../models/Product")
 const Thali = require("../models/Thali")
 const Combo = require("../models/Combo")
 const DeliveryBoy = require("../models/DeliveryBoy")
+const { applyCoupon } = require("./CouponController")
 require("../models/Restaurant")
 require("../models/Maincategory")
 const Razorpay = require("razorpay")
@@ -235,6 +236,39 @@ async function createRecord(req, res) {
         });
 
         await data.save();
+
+        // ── Enforce coupon usage limit per user (server-side) ─────────────────
+        // The client already called /coupon/validate (read-only). Now we do the
+        // actual atomic consumption — write CouponUsage + increment totalUsedCount.
+        // This re-checks all constraints, so a user who opens two tabs
+        // simultaneously cannot double-redeem the same single-use coupon.
+        const couponCode = (req.body.coupon || "").trim().toUpperCase();
+        if (couponCode && req.body.user) {
+            try {
+                const serverDiscount = await applyCoupon({
+                    code: couponCode,
+                    userId: req.body.user,
+                    orderId: data._id,
+                    orderValue: Number(req.body.subtotal) || 0,
+                });
+                // Replace the client-supplied discount with the authoritative
+                // server-calculated value to prevent tampering.
+                if (typeof serverDiscount === "number" && serverDiscount >= 0) {
+                    const baseDiscount = serverDiscount;
+                    const memberExtra = req.body.memberDiscountApplied ? (Number(req.body.memberDiscount) || 0) : 0;
+                    data.discount = baseDiscount + memberExtra;
+                    await data.save();
+                }
+            } catch (couponErr) {
+                // Coupon consumption failed (already used, expired, limit hit…)
+                // Roll back the freshly-created order so the user can correct the issue.
+                await Checkout.findByIdAndDelete(data._id);
+                return res.status(400).send({
+                    result: "Fail",
+                    reason: couponErr.message || "Coupon could not be applied"
+                });
+            }
+        }
 
         // ── Deduct CreditCoins atomically ──────────────────────────────────────
         // coinsUsed is sent from the client when the user chose to redeem coins.

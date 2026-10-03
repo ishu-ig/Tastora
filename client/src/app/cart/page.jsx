@@ -959,7 +959,7 @@ export default function CartPage() {
                         {/* Top: Image + Info Row */}
                         <div className="flex items-start gap-3">
                           {/* Food Photo with Veg Dot Badge */}
-                          <div className="relative w-18 h-18 rounded-2xl bg-zinc-100 overflow-hidden border border-zinc-200 shadow-2xs shrink-0">
+                          <div className="relative w-[72px] h-[72px] rounded-2xl bg-zinc-100 overflow-hidden border border-zinc-200 shadow-2xs shrink-0">
                             <img
                               src={dish.image}
                               alt={dish.title}
@@ -1008,8 +1008,8 @@ export default function CartPage() {
 
                         {/* Bottom Row: Stepper (Left) & Note/Trash/Total (Right) */}
                         <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-200/60">
-                          {/* Comfortable Stepper with touch-friendly buttons */}
-                          <div className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-rose-500 text-white rounded-full p-0.5 shadow-xs">
+                          {/* Comfortable Stepper */}
+                          <div className="flex items-center gap-1 bg-rose-600 text-white rounded-full px-1 py-0.5 shadow-xs">
                             <button
                               type="button"
                               onClick={() => handleQtyChange(id, -1, dish)}
@@ -1785,9 +1785,9 @@ export default function CartPage() {
           </div>
 
           {/* ═══════════════════════════════════════════════
-              RIGHT COLUMN — Sticky Sidebar: Destination + Coupons + Bill Summary
+              RIGHT COLUMN — Sticky Sidebar (DESKTOP ONLY — hidden on mobile/tablet)
           ═══════════════════════════════════════════════ */}
-          <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 lg:sticky lg:top-36 space-y-4">
+          <div className="hidden lg:block lg:w-[380px] xl:w-[410px] shrink-0 lg:sticky lg:top-36 space-y-4">
             {/* 1. Quick Delivery Destination / Fulfillment Snapshot (Desktop only to prevent mobile duplication) */}
             <div className="hidden lg:flex bg-white rounded-3xl p-3.5 sm:p-4 border border-zinc-200/80 shadow-xs items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -2184,9 +2184,49 @@ export default function CartPage() {
         </div>
 
         {/* ====================================================
+            MOBILE MINI BILL SUMMARY — shown above sticky bar on < lg
+        ==================================================== */}
+        <div className="lg:hidden bg-white rounded-2xl border border-zinc-200/80 shadow-sm overflow-hidden mb-2">
+          <div className="px-4 py-3 bg-zinc-900 flex items-center justify-between">
+            <span className="text-xs font-black text-white">Order Summary</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 capitalize">
+              {orderMode === "delivery" ? "🛵 Delivery" : orderMode === "takeaway" ? "🥡 Takeaway" : "🍽️ Dine-In"}
+            </span>
+          </div>
+          <div className="px-4 py-3 space-y-2 text-xs">
+            <div className="flex justify-between text-zinc-600">
+              <span>Subtotal ({totalCartCount} item{totalCartCount !== 1 ? "s" : ""})</span>
+              <span className="font-mono font-bold text-zinc-900">₹{subtotal.toFixed(2)}</span>
+            </div>
+            {appliedCoupon && discountAmount > 0 && (
+              <div className="flex justify-between text-emerald-600 font-semibold">
+                <span>Promo ({appliedCoupon.code})</span>
+                <span className="font-mono">-₹{discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+            {orderMode === "delivery" && (
+              <div className="flex justify-between text-zinc-600">
+                <span>Delivery Fee</span>
+                {deliveryFee === 0
+                  ? <span className="text-emerald-600 font-bold">FREE</span>
+                  : <span className="font-mono font-bold text-zinc-900">₹{deliveryFee.toFixed(2)}</span>}
+              </div>
+            )}
+            <div className="flex justify-between text-zinc-600">
+              <span>Taxes &amp; GST</span>
+              <span className="font-mono font-bold text-zinc-900">₹{taxAmount.toFixed(2)}</span>
+            </div>
+            <div className="pt-2 border-t border-zinc-100 flex justify-between items-center">
+              <span className="font-black text-zinc-900 text-sm">Total to Pay</span>
+              <span className="font-black text-rose-600 text-lg font-mono">₹{grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ====================================================
             5. MOBILE & TABLET STICKY BOTTOM CHECKOUT BAR (Visible on <lg screens)
         ==================================================== */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-zinc-200/90 p-3 sm:p-4 shadow-2xl shadow-zinc-900/20 animate-in slide-in-from-bottom duration-300">
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/97 backdrop-blur-md border-t border-zinc-200/90 p-3 sm:p-4 shadow-2xl shadow-zinc-900/20 animate-in slide-in-from-bottom duration-300">
           <div className="max-w-xl mx-auto flex items-center justify-between gap-3">
             <div>
               <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-400 block">

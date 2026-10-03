@@ -210,9 +210,89 @@ async function deleteRecord(req, res) {
     }
 }
 
+// ── Per-user usage count (GET /api/coupon/usage/user/:userId) ─────────────────
+// Returns how many times this user has used each coupon.
+// Call from the cart page to mark coupons as "already used" in the UI.
+async function getUserUsage(req, res) {
+    try {
+        const { userId } = req.params
+        if (!userId) return res.status(400).send({ result: "Fail", reason: "userId required" })
+
+        const usages = await CouponUsage.find({ user: userId })
+            .populate("coupon", "code usageLimitPerUser totalUsageLimit totalUsedCount")
+            .sort({ usedAt: -1 })
+            .lean()
+
+        // Group by coupon: { [couponId]: { code, usedCount, limitPerUser } }
+        const grouped = {}
+        for (const u of usages) {
+            if (!u.coupon) continue
+            const id = String(u.coupon._id)
+            if (!grouped[id]) {
+                grouped[id] = {
+                    couponId: id,
+                    code: u.coupon.code,
+                    usedCount: 0,
+                    limitPerUser: u.coupon.usageLimitPerUser,
+                    totalUsedCount: u.coupon.totalUsedCount,
+                    totalUsageLimit: u.coupon.totalUsageLimit,
+                }
+            }
+            grouped[id].usedCount += 1
+        }
+
+        res.send({ result: "Done", data: Object.values(grouped) })
+    } catch (error) {
+        console.log(error)
+        res.status(500).send({ result: "Fail", reason: "Internal Server Error" })
+    }
+}
+
+// ── Admin: full usage stats for a specific coupon ─────────────────────────────
+// GET /api/coupon/:_id/usage-stats
+async function getUsageStats(req, res) {
+    try {
+        const coupon = await Coupon.findById(req.params._id).lean()
+        if (!coupon) return res.status(404).send({ result: "Fail", reason: "Coupon not found" })
+
+        const usages = await CouponUsage.find({ coupon: coupon._id })
+            .populate("user", "name email")
+            .populate("order", "total orderStatus createdAt")
+            .sort({ usedAt: -1 })
+            .lean()
+
+        // Per-user breakdown
+        const byUser = {}
+        for (const u of usages) {
+            const uid = String(u.user?._id || u.user)
+            if (!byUser[uid]) byUser[uid] = { user: u.user, usedCount: 0, totalDiscount: 0, orders: [] }
+            byUser[uid].usedCount += 1
+            byUser[uid].totalDiscount += u.discountAmount || 0
+            byUser[uid].orders.push({ orderId: u.order, usedAt: u.usedAt, discountAmount: u.discountAmount })
+        }
+
+        res.send({
+            result: "Done",
+            coupon: {
+                code: coupon.code,
+                totalUsedCount: coupon.totalUsedCount,
+                totalUsageLimit: coupon.totalUsageLimit,
+                usageLimitPerUser: coupon.usageLimitPerUser,
+                totalDiscountGiven: usages.reduce((s, u) => s + (u.discountAmount || 0), 0),
+            },
+            userBreakdown: Object.values(byUser),
+        })
+    } catch (error) {
+        console.log(error)
+        res.status(500).send({ result: "Fail", reason: "Internal Server Error" })
+    }
+}
+
 module.exports = {
     validateCoupon,
     applyCoupon,
+    getUserUsage,
+    getUsageStats,
     createRecord,
     getRecord,
     getSingleRecord,
