@@ -588,359 +588,153 @@ export default function CartPage() {
   // ACTIVE CART VIEW
   // ----------------------------------------------------
   return (
-    <div className="min-h-screen bg-zinc-50/70 pt-20 sm:pt-32 lg:pt-36 pb-28 sm:pb-32">
-      <div className="w-full max-w-[1400px] mx-auto px-3.5 sm:px-6 lg:px-8 xl:px-10 space-y-5 sm:space-y-6">
+    <div className="min-h-screen bg-[#F8F4F0] pt-[72px] sm:pt-32 lg:pt-36 pb-32 sm:pb-32">
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 space-y-3 sm:space-y-6">
         {/* ── Page Header ── */}
-        <div className="pb-4 border-b border-zinc-200/80">
-          {/* Mobile: single-row compact header */}
-          <div className="flex sm:hidden items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Link
-                href="/menu"
-                className="w-8 h-8 rounded-xl bg-white border border-zinc-200 shadow-xs flex items-center justify-center text-zinc-600 hover:text-rose-600 hover:border-rose-200 transition-all shrink-0 active:scale-95"
-                aria-label="Back to Menu"
-              >
+        <div className="pb-3 border-b border-zinc-200">
+          {/* Mobile */}
+          <div className="flex sm:hidden items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Link href="/menu" className="w-9 h-9 rounded-2xl bg-white border border-zinc-200 shadow-sm flex items-center justify-center text-zinc-600 active:scale-95 shrink-0" aria-label="Back">
                 <ChevronLeft className="w-4 h-4" />
               </Link>
-              <div className="min-w-0">
-                <h1 className="text-lg font-black text-zinc-900 tracking-tight flex items-center gap-2">
+              <div>
+                <h1 className="text-xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
                   Your Cart
-                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black">
-                    {totalCartCount}
-                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-black">{totalCartCount}</span>
                 </h1>
-                <p className="text-[10px] text-zinc-400 font-medium truncate">
-                  {totalCartCount} {totalCartCount === 1 ? "item" : "items"} • ₹{subtotal.toFixed(2)}
-                </p>
+                <p className="text-[11px] text-zinc-400 font-medium">{totalCartCount} item{totalCartCount !== 1 ? 's' : ''} • ₹{subtotal.toFixed(0)}</p>
               </div>
             </div>
-            <button
-              onClick={handleClearCart}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-zinc-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer shrink-0"
-            >
-              <Trash2 className="w-3 h-3 shrink-0" />
-              <span>Clear</span>
+            <button onClick={handleClearCart} className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-zinc-200 transition-all cursor-pointer">
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear
             </button>
           </div>
 
-          {/* Desktop: original two-column header */}
+          {/* Desktop */}
           <div className="hidden sm:flex sm:items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-zinc-400 mb-1 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 mb-1">
                 <Link href="/" className="hover:text-rose-600 transition-colors">Home</Link>
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                <ChevronRight className="w-3.5 h-3.5" />
                 <Link href="/menu" className="hover:text-rose-600 transition-colors">Menu</Link>
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-rose-600 font-bold">Shopping Cart</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+                <span className="text-rose-600 font-bold">Cart</span>
               </div>
-              <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-zinc-900 tracking-tight flex items-center gap-2.5 sm:gap-3 flex-wrap">
-                <span>Your Cart</span>
-                <span className="px-2.5 sm:px-3 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] sm:text-xs font-black">
-                  {totalCartCount} {totalCartCount === 1 ? "Item" : "Items"}
-                </span>
+              <h1 className="text-3xl lg:text-4xl font-black text-zinc-900 tracking-tight flex items-center gap-3">
+                Your Cart
+                <span className="px-3 py-0.5 rounded-full bg-rose-100 text-rose-700 text-xs font-black">{totalCartCount} Items</span>
               </h1>
             </div>
-            <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-              <button
-                onClick={handleClearCart}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                <span>Clear Cart</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ====================================================
-            1. ORDER FULFILLMENT MODE SELECTOR (Delivery vs Takeaway vs Dine-In)
-        ==================================================== */}
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-zinc-200/80 shadow-xs space-y-2.5 sm:space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0"></span>
-              <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-zinc-700">
-                Choose Dining &amp; Delivery Option:
-              </span>
-            </div>
-            <span className="hidden sm:inline text-xs font-bold text-zinc-400">
-              {orderMode === "delivery" && "🛵 Fast Doorstep Delivery"}
-              {orderMode === "takeaway" && "🥡 Self-Pickup • 0 Delivery Fee"}
-              {orderMode === "dinein" && "🍽️ Direct Table Service"}
-            </span>
-          </div>
-
-          {/* Mobile Segmented Switcher (< sm) */}
-          <div className="sm:hidden grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-zinc-100/90 border border-zinc-200">
-            {/* Delivery */}
-            <button
-              type="button"
-              onClick={() => setOrderMode("delivery")}
-              className={`py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 ${
-                orderMode === "delivery"
-                  ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-sm font-black"
-                  : "text-zinc-600 hover:text-zinc-900 font-bold"
-              }`}
-            >
-              <div className="flex items-center gap-1">
-                <Bike className="w-3.5 h-3.5" />
-                <span className="text-[11px] leading-tight">Delivery</span>
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                orderMode === "delivery" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
-              }`}>
-                {isFreeDelivery ? "FREE" : `₹${CART_RULES.deliveryFee}`}
-              </span>
-            </button>
-
-            {/* Takeaway */}
-            <button
-              type="button"
-              onClick={() => setOrderMode("takeaway")}
-              className={`py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 ${
-                orderMode === "takeaway"
-                  ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-sm font-black"
-                  : "text-zinc-600 hover:text-zinc-900 font-bold"
-              }`}
-            >
-              <div className="flex items-center gap-1">
-                <Store className="w-3.5 h-3.5" />
-                <span className="text-[11px] leading-tight">Takeaway</span>
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
-                orderMode === "takeaway" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
-              }`}>
-                ₹0 FEE
-              </span>
-            </button>
-
-            {/* Dine-In */}
-            <button
-              type="button"
-              onClick={() => setOrderMode("dinein")}
-              className={`py-2 px-1 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer active:scale-95 ${
-                orderMode === "dinein"
-                  ? "bg-gradient-to-r from-rose-600 to-amber-500 text-white shadow-sm font-black"
-                  : "text-zinc-600 hover:text-zinc-900 font-bold"
-              }`}
-            >
-              <div className="flex items-center gap-1">
-                <Utensils className="w-3.5 h-3.5" />
-                <span className="text-[11px] leading-tight">Dine-In</span>
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold truncate max-w-[70px] ${
-                orderMode === "dinein" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-800"
-              }`}>
-                {tableNumber || "Table"}
-              </span>
-            </button>
-          </div>
-
-          {/* Desktop & Tablet Full Mode Cards (>= sm) */}
-          <div className="hidden sm:grid grid-cols-3 gap-2.5 sm:gap-3">
-            {/* Mode 1: Home Delivery */}
-            <button
-              type="button"
-              onClick={() => setOrderMode("delivery")}
-              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer flex items-center sm:items-start gap-3 ${orderMode === "delivery"
-                ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
-                : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
-                }`}
-            >
-              <div
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${orderMode === "delivery"
-                  ? "bg-white/20 text-white backdrop-blur-xs"
-                  : "bg-rose-100 text-rose-600"
-                  }`}
-              >
-                <Bike className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs sm:text-sm font-black tracking-tight">
-                    Home Delivery
-                  </h3>
-                  {orderMode === "delivery" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                  )}
-                </div>
-                <p
-                  className={`text-[11px] font-medium truncate mt-0.5 ${orderMode === "delivery" ? "text-rose-100" : "text-zinc-500"
-                    }`}
-                >
-                  Doorstep in 25-35 mins
-                </p>
-                <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold flex-wrap">
-                  {isFreeDelivery ? (
-                    <span
-                      className={`px-2 py-0.5 rounded-full ${orderMode === "delivery"
-                        ? "bg-white/25 text-white"
-                        : "bg-emerald-100 text-emerald-800"
-                        }`}
-                    >
-                      FREE DELIVERY
-                    </span>
-                  ) : (
-                    <span
-                      className={`px-2 py-0.5 rounded-full ${orderMode === "delivery"
-                        ? "bg-white/25 text-white"
-                        : "bg-zinc-200 text-zinc-700"
-                        }`}
-                    >
-                      ₹{CART_RULES.deliveryFee} Fee (Free &gt;₹{CART_RULES.freeDeliveryThreshold})
-                    </span>
-                  )}
-                </div>
-              </div>
-            </button>
-
-            {/* Mode 2: Takeaway / Self-Pickup */}
-            <button
-              type="button"
-              onClick={() => setOrderMode("takeaway")}
-              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer flex items-center sm:items-start gap-3 ${orderMode === "takeaway"
-                ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
-                : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
-                }`}
-            >
-              <div
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${orderMode === "takeaway"
-                  ? "bg-white/20 text-white backdrop-blur-xs"
-                  : "bg-amber-100 text-amber-700"
-                  }`}
-              >
-                <Store className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs sm:text-sm font-black tracking-tight">
-                    Takeaway / Pickup
-                  </h3>
-                  {orderMode === "takeaway" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                  )}
-                </div>
-                <p
-                  className={`text-[11px] font-medium truncate mt-0.5 ${orderMode === "takeaway" ? "text-rose-100" : "text-zinc-500"
-                    }`}
-                >
-                  Pick up at counter • No wait
-                </p>
-                <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold flex-wrap">
-                  <span
-                    className={`px-2 py-0.5 rounded-full ${orderMode === "takeaway"
-                      ? "bg-white/25 text-white"
-                      : "bg-emerald-100 text-emerald-800"
-                      }`}
-                  >
-                    ₹0 DELIVERY FEE
-                  </span>
-                </div>
-              </div>
-            </button>
-
-            {/* Mode 3: Dine-In / Table Service */}
-            <button
-              type="button"
-              onClick={() => setOrderMode("dinein")}
-              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer flex items-center sm:items-start gap-3 ${orderMode === "dinein"
-                ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white border-transparent shadow-lg shadow-rose-500/25 scale-[1.01]"
-                : "bg-zinc-50/80 hover:bg-zinc-100/80 border-zinc-200/90 text-zinc-700"
-                }`}
-            >
-              <div
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${orderMode === "dinein"
-                  ? "bg-white/20 text-white backdrop-blur-xs"
-                  : "bg-rose-100 text-rose-600"
-                  }`}
-              >
-                <Utensils className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs sm:text-sm font-black tracking-tight">
-                    Dine-In Table
-                  </h3>
-                  {orderMode === "dinein" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                  )}
-                </div>
-                <p
-                  className={`text-[11px] font-medium truncate mt-0.5 ${orderMode === "dinein" ? "text-rose-100" : "text-zinc-500"
-                    }`}
-                >
-                  Direct table dining service
-                </p>
-                <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold flex-wrap">
-                  <span
-                    className={`px-2 py-0.5 rounded-full ${orderMode === "dinein"
-                      ? "bg-white/25 text-white"
-                      : "bg-purple-100 text-purple-800"
-                      }`}
-                  >
-                    {tableNumber || "Select Table"}
-                  </span>
-                </div>
-              </div>
+            <button onClick={handleClearCart} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-zinc-200 transition-all cursor-pointer">
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear Cart
             </button>
           </div>
         </div>
 
-        {/* Free Delivery Banner (Shown for Delivery Mode) */}
+        {/* ────────────────────────────────────────────
+            ORDER FULFILLMENT MODE SELECTOR
+        ──────────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-zinc-200/80 shadow-sm overflow-hidden">
+          {/* Mobile: pill segmented control */}
+          <div className="sm:hidden p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2.5 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+              How do you want your order?
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: "delivery", icon: <Bike className="w-4 h-4" />, label: "Delivery", sub: isFreeDelivery ? "Free" : `₹${CART_RULES.deliveryFee}`, color: "rose" },
+                { id: "takeaway", icon: <Store className="w-4 h-4" />, label: "Takeaway", sub: "No fee", color: "amber" },
+                { id: "dinein", icon: <Utensils className="w-4 h-4" />, label: "Dine-In", sub: tableNumber || "Table", color: "purple" },
+              ].map((m) => {
+                const active = orderMode === m.id;
+                return (
+                  <button key={m.id} type="button" onClick={() => setOrderMode(m.id)}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl font-bold transition-all active:scale-95 cursor-pointer border ${
+                      active
+                        ? "bg-gradient-to-b from-rose-600 to-rose-700 text-white border-transparent shadow-md shadow-rose-500/30"
+                        : "bg-zinc-50 text-zinc-600 border-zinc-200 hover:border-rose-200"
+                    }`}
+                  >
+                    <span className={`p-1.5 rounded-xl ${active ? "bg-white/20" : "bg-white border border-zinc-200"}`}>{m.icon}</span>
+                    <span className="text-[12px] leading-none">{m.label}</span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${active ? "bg-white/25 text-white" : "bg-emerald-100 text-emerald-800"}`}>{m.sub}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Desktop & Tablet: full cards */}
+          <div className="hidden sm:grid grid-cols-3 gap-0 divide-x divide-zinc-100">
+            {[
+              { id: "delivery", Icon: Bike, label: "Home Delivery", sub: "Doorstep in 25-35 mins", badge: isFreeDelivery ? "FREE DELIVERY" : `₹${CART_RULES.deliveryFee} Fee`, badgeColor: isFreeDelivery ? "emerald" : "zinc", iconBg: "rose" },
+              { id: "takeaway", Icon: Store, label: "Takeaway / Pickup", sub: "Pick up at counter", badge: "₹0 FEE", badgeColor: "emerald", iconBg: "amber" },
+              { id: "dinein", Icon: Utensils, label: "Dine-In Table", sub: "Direct table service", badge: tableNumber || "Select Table", badgeColor: "purple", iconBg: "rose" },
+            ].map((m) => {
+              const active = orderMode === m.id;
+              return (
+                <button key={m.id} type="button" onClick={() => setOrderMode(m.id)}
+                  className={`p-4 sm:p-5 text-left transition-all cursor-pointer flex items-start gap-3 ${
+                    active ? "bg-gradient-to-br from-rose-600 to-amber-500 text-white shadow-inner" : "bg-white hover:bg-zinc-50 text-zinc-700"
+                  }`}
+                >
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${active ? "bg-white/20" : "bg-zinc-100 text-zinc-600"}`}>
+                    <m.Icon className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-black tracking-tight ${active ? "text-white" : "text-zinc-900"}`}>{m.label}</p>
+                    <p className={`text-[11px] mt-0.5 ${active ? "text-rose-100" : "text-zinc-500"}`}>{m.sub}</p>
+                    <span className={`inline-block mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      active ? "bg-white/25 text-white" : "bg-zinc-200 text-zinc-700"
+                    }`}>{m.badge}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Free Delivery Progress Bar */}
         {orderMode === "delivery" && (
-          <div className="p-3.5 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-transparent border border-rose-200/80 space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 text-xs sm:text-sm font-bold">
-              <span className="flex items-center gap-1.5 sm:gap-2 text-zinc-900 flex-wrap">
-                <Sparkles className="w-4 h-4 text-rose-500 shrink-0" />
-                {isFreeDelivery ? (
-                  <span className="text-emerald-700 font-black">
-                    🎉 Congratulations! You unlocked FREE Instant Delivery.
-                  </span>
-                ) : (
-                  <span>
-                    Add <span className="text-rose-600 font-black">₹{freeDeliveryShortfall.toFixed(2)}</span> more to unlock <span className="text-rose-600 font-bold">FREE Delivery</span>!
-                  </span>
-                )}
+          <div className="px-4 py-3 sm:p-5 rounded-2xl bg-white border border-rose-200/70 shadow-sm space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="flex items-center gap-1.5 text-zinc-800">
+                <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+                {isFreeDelivery
+                  ? <span className="text-emerald-700">🎉 Free Delivery unlocked!</span>
+                  : <span>Add <span className="text-rose-600">₹{freeDeliveryShortfall.toFixed(0)}</span> more for <span className="text-rose-600">FREE Delivery</span></span>
+                }
               </span>
-              <span className="text-zinc-500 font-mono text-[11px] sm:text-xs shrink-0">
-                ₹{subtotal.toFixed(2)} / ₹{freeDeliveryThreshold.toFixed(2)}
-              </span>
+              <span className="text-zinc-400 font-mono text-[10px]">₹{subtotal.toFixed(0)} / ₹{freeDeliveryThreshold.toFixed(0)}</span>
             </div>
-
-            <div className="w-full h-2 bg-zinc-200 rounded-full overflow-hidden">
+            <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden">
               <div
-                className={`h-full transition-all duration-500 rounded-full ${isFreeDelivery
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-500"
-                  : "bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500"
-                  }`}
-                style={{
-                  width: `${Math.min(100, (subtotal / freeDeliveryThreshold) * 100)}%`,
-                }}
+                className={`h-full transition-all duration-500 rounded-full ${isFreeDelivery ? "bg-gradient-to-r from-emerald-500 to-teal-400" : "bg-gradient-to-r from-rose-600 to-amber-500"}`}
+                style={{ width: `${Math.min(100, (subtotal / freeDeliveryThreshold) * 100)}%` }}
               />
             </div>
           </div>
         )}
 
-        {/* ── Two-Column Layout: Left (items + coupons) · Right (sticky bill) ── */}
-        <div className="flex flex-col lg:flex-row items-start gap-6 lg:gap-7 w-full">
-          {/* ═══════════════════════════════════════════════
-              LEFT COLUMN — Cart Items + Settings + Coupons
-          ═══════════════════════════════════════════════ */}
-          <div className="flex-1 min-w-0 space-y-5 sm:space-y-6">
+        {/* Two-Column Layout */}
+        <div className="flex flex-col lg:flex-row items-start gap-4 sm:gap-6 lg:gap-7 w-full">
+          {/* LEFT COLUMN — Cart Items + Settings */}
+          <div className="flex-1 min-w-0 w-full space-y-3 sm:space-y-5">
 
-            {/* 1. DISH ITEMS */}
-            <div className="w-full bg-white rounded-3xl p-3.5 sm:p-6 border border-zinc-200/80 shadow-xs space-y-3.5 sm:space-y-4">
-              <div className="flex items-center justify-between pb-2.5 sm:pb-3 border-b border-zinc-100">
-                <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-zinc-500">
-                  Dish Details
+            {/* ── DISH ITEMS ── */}
+            <div className="w-full bg-white rounded-2xl sm:rounded-3xl border border-zinc-200/80 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/60">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-lg bg-rose-600 text-white flex items-center justify-center text-[10px] font-black">{totalCartCount}</span>
+                  Items in Cart
                 </span>
-                <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-zinc-500">
-                  Quantity &amp; Total
-                </span>
+                <span className="text-xs font-black text-zinc-400">Subtotal ₹{subtotal.toFixed(0)}</span>
               </div>
-
-              {/* Dish Items List (100% Full-Width Rich Cards) */}
-              <div className="space-y-3 sm:space-y-3.5">
+              <div className="divide-y divide-zinc-100">
                 {cartEntries.map(([id, quantity]) => {
                   const dish = dishById[id];
                   if (!dish) return null;
@@ -950,7 +744,7 @@ export default function CartPage() {
                   return (
                     <div
                       key={id}
-                      className="w-full bg-zinc-50/60 hover:bg-zinc-50/90 rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-5 border border-zinc-200/80 hover:border-rose-200 transition-all duration-200 shadow-2xs hover:shadow-xs space-y-2.5 sm:space-y-3 group"
+                      className="w-full p-3.5 sm:p-5 hover:bg-zinc-50/80 transition-colors duration-150 space-y-2.5 sm:space-y-3 group"
                     >
                       {/* =========================================================
                           MOBILE VIEW (< sm / <640px): Modern Native App Food Card
@@ -959,14 +753,10 @@ export default function CartPage() {
                         {/* Top: Image + Info Row */}
                         <div className="flex items-start gap-3">
                           {/* Food Photo with Veg Dot Badge */}
-                          <div className="relative w-[72px] h-[72px] rounded-2xl bg-zinc-100 overflow-hidden border border-zinc-200 shadow-2xs shrink-0">
-                            <img
-                              src={dish.image}
-                              alt={dish.title}
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute top-1 left-1 w-3.5 h-3.5 rounded bg-white/95 border border-emerald-600 flex items-center justify-center shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          <div className="relative w-[80px] h-[80px] rounded-2xl bg-zinc-100 overflow-hidden border border-zinc-200 shadow-sm shrink-0">
+                            <img src={dish.image} alt={dish.title} className="w-full h-full object-cover" />
+                            <div className="absolute top-1 left-1 w-4 h-4 rounded bg-white/95 border border-emerald-600 flex items-center justify-center shadow">
+                              <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
                             </div>
                           </div>
 
@@ -1006,10 +796,10 @@ export default function CartPage() {
                           </div>
                         </div>
 
-                        {/* Bottom Row: Stepper (Left) & Note/Trash/Total (Right) */}
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-200/60">
-                          {/* Comfortable Stepper */}
-                          <div className="flex items-center gap-1 bg-rose-600 text-white rounded-full px-1 py-0.5 shadow-xs">
+                        {/* Bottom Row: Stepper + Total + Actions */}
+                        <div className="flex items-center justify-between gap-2">
+                          {/* Stepper */}
+                          <div className="flex items-center bg-rose-600 text-white rounded-full shadow-sm overflow-hidden">
                             <button
                               type="button"
                               onClick={() => handleQtyChange(id, -1, dish)}
@@ -1031,32 +821,24 @@ export default function CartPage() {
                             </button>
                           </div>
 
-                          {/* Note Button, Item Total & Trash */}
-                          <div className="flex items-center gap-2">
+                          {/* Right: Total + Note + Trash */}
+                          <div className="flex items-center gap-2.5 ml-auto">
+                            <span className="text-sm font-black text-zinc-900 font-mono">₹{itemTotal.toFixed(0)}</span>
                             <button
                               type="button"
-                              onClick={() =>
-                                setActiveNoteItemId(activeNoteItemId === id ? null : id)
-                              }
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-600 hover:text-rose-600 bg-white px-2 py-1 rounded-xl border border-zinc-200/80 shadow-2xs cursor-pointer active:scale-95 transition-all"
+                              onClick={() => setActiveNoteItemId(activeNoteItemId === id ? null : id)}
+                              className="w-7 h-7 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-500 hover:bg-rose-50 hover:text-rose-600 border border-zinc-200 transition-colors cursor-pointer active:scale-90"
+                              title="Add cooking note"
                             >
-                              <MessageSquare className="w-3 h-3 text-rose-500" />
-                              <span>{note ? "Note" : "+ Note"}</span>
+                              <MessageSquare className="w-3.5 h-3.5" />
                             </button>
-
-                            <div className="text-right">
-                              <span className="text-sm font-black text-zinc-900 font-mono">
-                                ₹{itemTotal.toFixed(2)}
-                              </span>
-                            </div>
-
                             <button
                               type="button"
                               onClick={() => handleRemoveItem(id)}
-                              className="p-1.5 rounded-xl text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer active:scale-90"
-                              title="Remove item"
+                              className="w-7 h-7 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-400 hover:bg-red-50 hover:text-red-600 border border-zinc-200 transition-colors cursor-pointer active:scale-90"
+                              title="Remove"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -1255,19 +1037,19 @@ export default function CartPage() {
                 })}
               </div>
 
-              {/* Add More Items Button */}
-              <div className="pt-3 border-t border-zinc-100">
+              {/* Add More Items */}
+              <div className="p-4 border-t border-zinc-100">
                 <Link
                   href="/menu"
-                  className="w-full py-3 rounded-2xl bg-zinc-50 hover:bg-rose-50 hover:text-rose-700 text-zinc-700 border border-dashed border-zinc-300 hover:border-rose-300 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3 rounded-2xl bg-zinc-50 hover:bg-rose-50 hover:text-rose-700 text-zinc-500 border border-dashed border-zinc-200 hover:border-rose-300 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Explore &amp; Add More Dishes</span>
+                  Add More Items
                 </Link>
               </div>
 
-              {/* Quick Coupon Strip for Mobile (< lg) */}
-              <div className="lg:hidden mt-3 bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-amber-500/10 border border-amber-300/60 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-2xs">
+              {/* Quick Coupon Strip (mobile-only, below items) */}
+              <div className="lg:hidden mx-4 mb-4 bg-amber-50 border border-amber-200/70 rounded-2xl p-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-rose-600 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
                     <Tag className="w-4 h-4" />
