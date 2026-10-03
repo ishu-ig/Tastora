@@ -839,29 +839,32 @@ export function CartProvider({ children }) {
     subtotal - discountAmount - creditCoinsDiscount + deliveryFee + taxAmount + activeTip
   );
 
-  // Live / active order — the most recent server-confirmed order (has dbId)
-  // Rules:
-  // 1. Must have a dbId  (backend-confirmed, belongs to current user)
-  // 2. Must have an explicit status from the server (null = no admin update yet—treat as terminal)
-  // 3. Status must NOT be terminal (case-insensitive)
-  // 4. Must be recent (created within the last 24 hours) — prevents stale old
-  //    orders from perpetually appearing as live
-  const TERMINAL_STATUSES_LOWER = new Set([
-    "delivered", "cancelled", "rejected", "failed", "refunded", "completed", "done",
+  // Live / active order — WHITELIST approach.
+  // Only orders with an explicitly active/in-progress status qualify.
+  // "Pending" = not yet confirmed → NOT live.
+  // null/undefined = never updated → NOT live.
+  // Any unknown status → NOT live (safe default).
+  //
+  // Also requires:
+  //  - dbId (server-confirmed, belongs to current user)
+  //  - created within last 24 hours (stale orders can't be live)
+  const ACTIVE_STATUSES_LOWER = new Set([
+    "confirmed", "accepted", "approved",
+    "in kitchen", "preparing", "in progress", "cooking",
+    "out for delivery", "dispatched", "on the way", "picked up",
+    "ready", "ready for pickup",
   ]);
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
   const now = Date.now();
 
   const liveOrder = ordersHistory.find((o) => {
-    if (!o.dbId) return false;                               // must be server-confirmed
-    if (!o.status) return false;                             // no status = don't treat as live
-    if (TERMINAL_STATUSES_LOWER.has(o.status.toLowerCase())) return false; // terminal
-    // Recency check: only orders created in the last 24 h can be "live"
+    if (!o.dbId) return false;
+    if (!o.status) return false;
     if (o.rawCreatedAt) {
       const age = now - new Date(o.rawCreatedAt).getTime();
       if (age > TWENTY_FOUR_HOURS) return false;
     }
-    return true;
+    return ACTIVE_STATUSES_LOWER.has(o.status.toLowerCase().trim());
   }) || null;
 
   return (
