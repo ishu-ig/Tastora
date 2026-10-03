@@ -15,6 +15,9 @@ import {
   Sparkles,
   Check,
   UtensilsCrossed,
+  Navigation,
+  MapPin,
+  ChevronRight,
 } from "lucide-react";
 import { rupee } from "@/lib/MenuDish";
 import QtyStepper from "./QtyStepper";
@@ -73,6 +76,32 @@ function CartControl({
       <Plus className={sm ? "w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[3]" : "w-4 h-4 stroke-[3]"} />
       <span>Add</span>
     </button>
+  );
+}
+
+// Live Order CTA — shown instead of Add/Stepper when an active order exists
+function LiveOrderCTA({ liveOrder, size }) {
+  const sm = size === "sm";
+  const statusLabel = liveOrder?.status || "In Progress";
+  return (
+    <a
+      href="/orders"
+      className={`flex items-center gap-1 sm:gap-1.5 rounded-xl sm:rounded-2xl font-black cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-md shadow-emerald-500/25 hover:shadow-emerald-500/35 relative overflow-hidden ${
+        sm ? "px-2 sm:px-3 h-7.5 sm:h-9 text-[10px] sm:text-xs" : "px-3 h-9 sm:h-10 text-xs sm:text-sm"
+      }`}
+    >
+      {/* Pulse ring */}
+      <span className="absolute inset-0 rounded-xl sm:rounded-2xl bg-white/10 animate-pulse" />
+      <Navigation className={sm ? "w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 relative" : "w-3.5 h-3.5 shrink-0 relative"} />
+      <span className="relative leading-none">
+        {sm ? (
+          <span className="hidden sm:inline">Track</span>
+        ) : (
+          <span>Track Order</span>
+        )}
+        {sm && <span className="sm:hidden">Track</span>}
+      </span>
+    </a>
   );
 }
 
@@ -334,6 +363,7 @@ export function Menucard({
   onToggleWishlist,
   onQuickView,
   viewMode = "grid",
+  liveOrder = null,
 }) {
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
   const [selectedVariantName, setSelectedVariantName] = useState(dish?.variantName || "");
@@ -608,16 +638,20 @@ export function Menucard({
                 </button>
               )}
 
-              <CartControl
-                dish={dish}
-                qty={count}
-                onAddToCart={onAddToCart}
-                onUpdateQty={onUpdateQty}
-                onOpenVariants={openVariantModal}
-                hasVariantOptions={hasVariantOptions}
-                onVariantStepChange={handleVariantStepChange}
-                size="md"
-              />
+              {liveOrder ? (
+                <LiveOrderCTA liveOrder={liveOrder} size="md" />
+              ) : (
+                <CartControl
+                  dish={dish}
+                  qty={count}
+                  onAddToCart={onAddToCart}
+                  onUpdateQty={onUpdateQty}
+                  onOpenVariants={openVariantModal}
+                  hasVariantOptions={hasVariantOptions}
+                  onVariantStepChange={handleVariantStepChange}
+                  size="md"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -782,16 +816,20 @@ export function Menucard({
               </button>
             )}
 
-            <CartControl
-              dish={dish}
-              qty={count}
-              onAddToCart={onAddToCart}
-              onUpdateQty={onUpdateQty}
-              onOpenVariants={openVariantModal}
-              hasVariantOptions={hasVariantOptions}
-              onVariantStepChange={handleVariantStepChange}
-              size="sm"
-            />
+            {liveOrder ? (
+              <LiveOrderCTA liveOrder={liveOrder} size="sm" />
+            ) : (
+              <CartControl
+                dish={dish}
+                qty={count}
+                onAddToCart={onAddToCart}
+                onUpdateQty={onUpdateQty}
+                onOpenVariants={openVariantModal}
+                hasVariantOptions={hasVariantOptions}
+                onVariantStepChange={handleVariantStepChange}
+                size="sm"
+              />
+            )}
           </div>
         </div>
       </div>

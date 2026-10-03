@@ -57,6 +57,8 @@ export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const isOrdersPage = pathname?.startsWith("/orders");
+  const isCartPage = pathname?.startsWith("/cart");
+  const isCheckoutPage = pathname?.startsWith("/checkout");
   const isSearchHidden =
     pathname?.startsWith("/orders") ||
     pathname?.startsWith("/cart") ||
@@ -283,11 +285,12 @@ export function Navbar() {
 
   const mobileNavItems = [
     { name: "Home", href: "/", icon: Home, badge: null },
-    { name: "Explore Menu", href: "/menu", icon: Utensils, badge: "Hot" },
+    { name: "Menu", href: "/menu", icon: Utensils, badge: "Hot" },
     { name: "Combo & Thali", href: "/combos", icon: Crown, badge: "Chef Special" },
-    // { name: "VIP Membership", href: "/membership", icon: Crown, badge: isMember ? "Active" : "Join VIP" },
-    { name: "Reserve a Table", href: "/reserve", icon: Calendar, badge: "Instant" },
-    { name: "Special Deals & Offers", href: "/#special", icon: Percent, badge: "Save 20%" },
+    { name: "Dining & Reserve", href: "/reserve", icon: Calendar, badge: "Instant" },
+    { name: "VIP Membership", href: "/membership", icon: Sparkles, badge: isMember ? "Active" : "Join VIP" },
+    { name: "My Orders", href: "/orders", icon: Package, badge: null },
+    { name: "Wishlist", href: "/wishlist", icon: Heart, badge: wishlistCount > 0 ? String(wishlistCount) : null },
     { name: "About & Contact", href: "/about", icon: Info, badge: null },
   ];
 
@@ -307,7 +310,7 @@ export function Navbar() {
               href="/"
               className="flex items-center gap-2.5 group focus:outline-none shrink-0"
             >
-              <TastoraLogo size={38} subtitle="Pure Gourmet Dining" hideTextOnMobile />
+              <TastoraLogo size={38} showText={false} />
             </Link>
 
             {/* RESPONSIVE NAVIGATION LINKS (Adaptive for Tablet & Desktop) */}
@@ -808,7 +811,53 @@ export function Navbar() {
               </div>
             </div>
 
-            {/* Row 2: Mobile Clean Search Bar */}
+            {/* Row 2: Mobile Search Bar OR Cart Progress Stepper */}
+            {(isCartPage || isCheckoutPage) && (
+              <div className="w-full">
+                {/* Cart Step Progress */}
+                <div className="flex items-center w-full gap-0">
+                  {/* Step 1: Menu */}
+                  <Link
+                    href="/menu"
+                    className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-400 hover:text-rose-600 transition-colors shrink-0 cursor-pointer"
+                  >
+                    <span className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[9px] font-black shrink-0">✓</span>
+                    <span className="hidden xs:inline">Menu</span>
+                  </Link>
+                  <div className="flex-1 h-px bg-emerald-400 mx-1.5" />
+                  {/* Step 2: Cart */}
+                  <Link
+                    href="/cart"
+                    className={`flex items-center gap-1.5 text-[10px] font-black shrink-0 cursor-pointer transition-colors ${
+                      isCartPage ? "text-rose-600" : "text-emerald-600 hover:text-rose-600"
+                    }`}
+                  >
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                      isCartPage
+                        ? "bg-rose-600 text-white ring-2 ring-rose-200"
+                        : "bg-emerald-500 text-white"
+                    }`}>
+                      {isCartPage ? "2" : "✓"}
+                    </span>
+                    <span className="hidden xs:inline">Cart</span>
+                  </Link>
+                  <div className={`flex-1 h-px mx-1.5 ${
+                    isCheckoutPage ? "bg-emerald-400" : "bg-zinc-200"
+                  }`} />
+                  {/* Step 3: Checkout */}
+                  <div className={`flex items-center gap-1.5 text-[10px] font-black shrink-0 ${
+                    isCheckoutPage ? "text-rose-600" : "text-zinc-400"
+                  }`}>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                      isCheckoutPage
+                        ? "bg-rose-600 text-white ring-2 ring-rose-200"
+                        : "bg-zinc-200 text-zinc-500"
+                    }`}>3</span>
+                    <span className="hidden xs:inline">Checkout</span>
+                  </div>
+                </div>
+              </div>
+            )}
             {!isSearchHidden && (
               <div className="relative w-full" ref={searchRef}>
                 <div className="relative flex items-center w-full">
@@ -1078,6 +1127,43 @@ export function Navbar() {
                     )}
                   </div>
                 )}
+              </div>
+            ) : (isCartPage || isCheckoutPage) ? (
+              /* Cart/Checkout Step Progress Bar (Desktop) */
+              <div className="flex-1 flex items-center justify-center px-4">
+                <div className="flex items-center gap-0 max-w-sm w-full">
+                  {/* Step 1 */}
+                  <Link href="/menu" className="flex items-center gap-2 text-xs font-bold text-emerald-600 hover:text-rose-600 transition-colors shrink-0 cursor-pointer group">
+                    <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-black group-hover:bg-rose-500 transition-colors">✓</span>
+                    <span>Menu</span>
+                  </Link>
+                  <div className="flex-1 h-0.5 bg-emerald-400 mx-2" />
+                  {/* Step 2 */}
+                  <Link href="/cart" className={`flex items-center gap-2 text-xs font-black shrink-0 cursor-pointer transition-colors ${
+                    isCartPage ? "text-rose-600" : "text-emerald-600 hover:text-rose-600"
+                  }`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 transition-all ${
+                      isCartPage
+                        ? "bg-rose-600 text-white shadow-md shadow-rose-500/30 scale-110"
+                        : "bg-emerald-500 text-white"
+                    }`}>{isCartPage ? "2" : "✓"}</span>
+                    <span>Cart</span>
+                  </Link>
+                  <div className={`flex-1 h-0.5 mx-2 ${
+                    isCheckoutPage ? "bg-emerald-400" : "bg-zinc-200"
+                  }`} />
+                  {/* Step 3 */}
+                  <div className={`flex items-center gap-2 text-xs font-black shrink-0 ${
+                    isCheckoutPage ? "text-rose-600" : "text-zinc-400"
+                  }`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 transition-all ${
+                      isCheckoutPage
+                        ? "bg-rose-600 text-white shadow-md shadow-rose-500/30 scale-110"
+                        : "bg-zinc-200 text-zinc-500"
+                    }`}>3</span>
+                    <span>Checkout</span>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="flex-1" />

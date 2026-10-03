@@ -42,6 +42,7 @@ import { Addtocart } from "@/Component/AddToCart";
 import QtyStepper from "@/Component/QtyStepper";
 import { CartAddedPopup } from "@/Component/Cartaddedpoup";
 import useCartWishlist from "@/hooks/useCartWishlist";
+import { useCart } from "../../context/CartContext";
 import { mapProductToDish, rupee } from "@/lib/MenuDish";
 
 // ==========================================
@@ -1113,6 +1114,7 @@ function MenuPageContent() {
     addToCart, updateQty, addToWishlist, isInCart, isInWishlist, getQty,
     addedPopup, closeAddedPopup, clearCart, toast, cartCount, cartTotal,
   } = useCartWishlist();
+  const { liveOrder } = useCart();
 
   // ------------------------------------------
   // REDUX: read the slices, normalize their shape, and derive
@@ -2231,6 +2233,7 @@ function MenuPageContent() {
                         onAddToCart={addToCart}
                         onToggleWishlist={addToWishlist}
                         onQuickView={setQuickViewDish}
+                        liveOrder={liveOrder}
                       />
                     );
                   })}

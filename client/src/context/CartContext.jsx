@@ -824,6 +824,13 @@ export function CartProvider({ children }) {
     subtotal - discountAmount - creditCoinsDiscount + deliveryFee + taxAmount + activeTip
   );
 
+  // Live / active order — the most recent order that is not yet Delivered or Cancelled.
+  // While this exists, new orders should be blocked and the UI shows a tracking prompt.
+  const TERMINAL_STATUSES = ["Delivered", "Cancelled", "Rejected", "Failed", "Refunded"];
+  const liveOrder = ordersHistory.find(
+    (o) => o.status && !TERMINAL_STATUSES.includes(o.status)
+  ) || null;
+
   return (
     <CartContext.Provider
       value={{
@@ -888,6 +895,7 @@ export function CartProvider({ children }) {
         setMembership,
         isMember,
         memberFreeDelivery,
+        liveOrder,
       }}
     >
       {children}

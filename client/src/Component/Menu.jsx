@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Menucard } from "./MenuCard";
 import useCartWishlist from "@/hooks/useCartWishlist";
+import { useCart } from "../context/CartContext";
 import { mapProductToDish, rupee } from "@/lib/MenuDish";
 import { Addtocart } from "./AddToCart";
 import QtyStepper from "./QtyStepper";
@@ -37,6 +38,7 @@ export function Menu() {
     addToCart, updateQty, addToWishlist, isInCart, isInWishlist, getQty,
     addedPopup, closeAddedPopup, clearCart, toast, cartCount, cartTotal,
   } = useCartWishlist();
+  const { liveOrder } = useCart();
 
   // ── Redux state ────────────────────────────────────────────────────────────
   // ADAPT the key names below if your reducers mount under different keys.
@@ -152,6 +154,7 @@ export function Menu() {
                 onAddToCart={addToCart}
                 onToggleWishlist={addToWishlist}
                 onQuickView={setQuickViewDish}
+                liveOrder={liveOrder}
               />
             );
           })}

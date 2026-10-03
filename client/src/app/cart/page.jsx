@@ -587,38 +587,67 @@ export default function CartPage() {
   // ACTIVE CART VIEW
   // ----------------------------------------------------
   return (
-    <div className="min-h-screen bg-zinc-50/70 pt-28 sm:pt-36 lg:pt-40 pb-28 sm:pb-32">
+    <div className="min-h-screen bg-zinc-50/70 pt-20 sm:pt-32 lg:pt-36 pb-28 sm:pb-32">
       <div className="w-full max-w-[1400px] mx-auto px-3.5 sm:px-6 lg:px-8 xl:px-10 space-y-5 sm:space-y-6">
-        {/* Breadcrumb & Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-zinc-200/80">
-          <div>
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-zinc-400 mb-1 flex-wrap">
-              <Link href="/" className="hover:text-rose-600 transition-colors">
-                Home
+        {/* ── Page Header ── */}
+        <div className="pb-4 border-b border-zinc-200/80">
+          {/* Mobile: single-row compact header */}
+          <div className="flex sm:hidden items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Link
+                href="/menu"
+                className="w-8 h-8 rounded-xl bg-white border border-zinc-200 shadow-xs flex items-center justify-center text-zinc-600 hover:text-rose-600 hover:border-rose-200 transition-all shrink-0 active:scale-95"
+                aria-label="Back to Menu"
+              >
+                <ChevronLeft className="w-4 h-4" />
               </Link>
-              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-              <Link href="/menu" className="hover:text-rose-600 transition-colors">
-                Menu
-              </Link>
-              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-rose-600 font-bold">Shopping Cart</span>
+              <div className="min-w-0">
+                <h1 className="text-lg font-black text-zinc-900 tracking-tight flex items-center gap-2">
+                  Your Cart
+                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black">
+                    {totalCartCount}
+                  </span>
+                </h1>
+                <p className="text-[10px] text-zinc-400 font-medium truncate">
+                  {totalCartCount} {totalCartCount === 1 ? "item" : "items"} • ₹{subtotal.toFixed(2)}
+                </p>
+              </div>
             </div>
-            <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-zinc-900 tracking-tight flex items-center gap-2.5 sm:gap-3 flex-wrap">
-              <span>Your Cart</span>
-              <span className="px-2.5 sm:px-3 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] sm:text-xs font-black">
-                {totalCartCount} {totalCartCount === 1 ? "Item" : "Items"}
-              </span>
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
             <button
               onClick={handleClearCart}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-zinc-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer shrink-0"
             >
-              <Trash2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Clear Cart</span>
+              <Trash2 className="w-3 h-3 shrink-0" />
+              <span>Clear</span>
             </button>
+          </div>
+
+          {/* Desktop: original two-column header */}
+          <div className="hidden sm:flex sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-semibold text-zinc-400 mb-1 flex-wrap">
+                <Link href="/" className="hover:text-rose-600 transition-colors">Home</Link>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                <Link href="/menu" className="hover:text-rose-600 transition-colors">Menu</Link>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-rose-600 font-bold">Shopping Cart</span>
+              </div>
+              <h1 className="text-xl sm:text-3xl lg:text-4xl font-black text-zinc-900 tracking-tight flex items-center gap-2.5 sm:gap-3 flex-wrap">
+                <span>Your Cart</span>
+                <span className="px-2.5 sm:px-3 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] sm:text-xs font-black">
+                  {totalCartCount} {totalCartCount === 1 ? "Item" : "Items"}
+                </span>
+              </h1>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+              <button
+                onClick={handleClearCart}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Clear Cart</span>
+              </button>
+            </div>
           </div>
         </div>
 

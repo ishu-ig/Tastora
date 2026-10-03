@@ -9,6 +9,7 @@ import { AuthModal } from "../Component/AuthModal";
 import { ArrowUp } from "lucide-react";
 import { CartProvider } from "../context/CartContext";
 import { AuthProvider, useAuth } from "../context/AuthContext";
+import { LiveOrderBanner } from "../Component/LiveOrderBanner";
 
 // Renders the single global AuthModal — lives inside AuthProvider so it can read context
 function GlobalAuthModal() {
@@ -69,14 +70,17 @@ export default function MasterLayout({ children }) {
             {/* Single global AuthModal — any component opens it via useAuth().openAuthModal() */}
             <GlobalAuthModal />
 
+            {/* Live Order Tracking Banner (shown when order is active) */}
+            <LiveOrderBanner />
+
             {/* Floating Scroll-to-Top Button */}
             {showScrollTop && (
               <button
                 onClick={scrollToTop}
-                className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 text-white shadow-xl shadow-rose-600/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-200 animate-in fade-in slide-in-from-bottom-4"
+                className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 text-white shadow-xl shadow-rose-600/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-200 animate-in fade-in slide-in-from-bottom-4"
                 aria-label="Scroll to top"
               >
-                <ArrowUp className="w-5 h-5" />
+                <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             )}
           </div>
