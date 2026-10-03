@@ -291,6 +291,7 @@ export function CartProvider({ children }) {
           const mappedOrders = serverCheckouts.map((ch) => ({
             id: `ORD-${ch._id.slice(-6).toUpperCase()}`,
             dbId: ch._id,
+            rawCreatedAt: ch.createdAt || null,
             date: ch.createdAt
               ? new Date(ch.createdAt).toLocaleDateString("en-IN", {
                 day: "numeric",
@@ -302,7 +303,10 @@ export function CartProvider({ children }) {
             orderMode: ch.orderMode || "delivery",
             tableNumber: ch.tableNumber || null,
             pickupTime: ch.pickupTime || null,
-            status: ch.orderStatus || "Confirmed",
+            // Keep the raw backend value (null if not yet set by admin).
+            // Do NOT default to "Confirmed" — that would make old orders with no
+            // status look "live" and trigger the LiveOrderBanner incorrectly.
+            status: ch.orderStatus || null,
             statusColor: ch.orderStatus === "Delivered" ? "emerald" : "orange",
             currentStep: ch.orderStatus === "Delivered" ? 4 : 2,
             eta: ch.orderMode === "takeaway" ? "15-20 mins" : "25-30 mins",
@@ -836,14 +840,29 @@ export function CartProvider({ children }) {
   );
 
   // Live / active order — the most recent server-confirmed order (has dbId)
-  // that is not yet in a terminal state. Using only dbId orders ensures:
-  // 1. The order belongs to the current authenticated user (fetched by userId)
-  // 2. Local/optimistic orders never show as "live"
-  // 3. Stale localStorage orders from old sessions are excluded
-  const TERMINAL_STATUSES = ["Delivered", "Cancelled", "Rejected", "Failed", "Refunded"];
-  const liveOrder = ordersHistory.find(
-    (o) => o.dbId && o.status && !TERMINAL_STATUSES.includes(o.status)
-  ) || null;
+  // Rules:
+  // 1. Must have a dbId  (backend-confirmed, belongs to current user)
+  // 2. Must have an explicit status from the server (null = no admin update yet—treat as terminal)
+  // 3. Status must NOT be terminal (case-insensitive)
+  // 4. Must be recent (created within the last 24 hours) — prevents stale old
+  //    orders from perpetually appearing as live
+  const TERMINAL_STATUSES_LOWER = new Set([
+    "delivered", "cancelled", "rejected", "failed", "refunded", "completed", "done",
+  ]);
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const liveOrder = ordersHistory.find((o) => {
+    if (!o.dbId) return false;                               // must be server-confirmed
+    if (!o.status) return false;                             // no status = don't treat as live
+    if (TERMINAL_STATUSES_LOWER.has(o.status.toLowerCase())) return false; // terminal
+    // Recency check: only orders created in the last 24 h can be "live"
+    if (o.rawCreatedAt) {
+      const age = now - new Date(o.rawCreatedAt).getTime();
+      if (age > TWENTY_FOUR_HOURS) return false;
+    }
+    return true;
+  }) || null;
 
   return (
     <CartContext.Provider
