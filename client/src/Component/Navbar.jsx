@@ -310,7 +310,7 @@ export function Navbar() {
               href="/"
               className="flex items-center gap-2.5 group focus:outline-none shrink-0"
             >
-              <TastoraLogo size={38} showText={false} />
+              <TastoraLogo size={38} compact />
             </Link>
 
             {/* RESPONSIVE NAVIGATION LINKS (Adaptive for Tablet & Desktop) */}

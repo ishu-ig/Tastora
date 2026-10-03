@@ -35,9 +35,11 @@ export function LiveOrderBanner() {
   const currentStep = STATUS_STEPS[stepIndex] || STATUS_STEPS[0];
   const StepIcon = currentStep.icon;
   const progress = Math.round(((stepIndex + 1) / STATUS_STEPS.length) * 100);
+  const trackId = liveOrder.dbId || liveOrder.id || "";
+  const trackHref = trackId ? `/orders/track?id=${trackId}` : "/orders";
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
+    <div className="fixed bottom-0 left-0 right-0 z-[70] pointer-events-none">
       {/* Safe-area padding for mobile notch phones */}
       <div className="pointer-events-auto mx-3 mb-3 sm:mx-auto sm:max-w-lg sm:mb-4">
         <div className="relative bg-zinc-900/98 backdrop-blur-xl rounded-2xl border border-zinc-700/60 shadow-2xl shadow-black/40 overflow-hidden">
@@ -89,7 +91,7 @@ export function LiveOrderBanner() {
 
             {/* Track button */}
             <Link
-              href="/orders"
+              href={trackHref}
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white text-[11px] font-black shadow-md shadow-emerald-500/20 hover:from-emerald-500 hover:to-teal-400 active:scale-95 transition-all shrink-0"
             >
               <Navigation className="w-3 h-3" />

@@ -6,13 +6,9 @@ import {
   Quote,
   ChevronLeft,
   ChevronRight,
-  MessageSquareQuote,
   CheckCircle2,
-  Heart,
   Sparkles,
   Utensils,
-  Award,
-  ThumbsUp,
 } from "lucide-react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Navigation, Pagination } from "swiper/modules";
@@ -126,7 +122,10 @@ export function Testimonial() {
   const nextRef = useRef(null);
 
   return (
-    <section id="testimonials" className="py-10 sm:py-14 bg-gradient-to-b from-white via-rose-50/25 to-white relative overflow-hidden">
+    <section
+      id="testimonials"
+      className="py-10 sm:py-14 bg-gradient-to-b from-white via-rose-50/25 to-white relative overflow-hidden"
+    >
       {/* Background Animated Gradient Orbs */}
       <div className="absolute top-1/3 left-10 w-96 h-96 bg-gradient-to-tr from-rose-200/25 to-amber-200/15 rounded-full blur-[120px] pointer-events-none animate-pulse-glow" />
       <div className="absolute bottom-10 right-10 w-96 h-96 bg-gradient-to-bl from-pink-200/20 to-rose-200/20 rounded-full blur-[120px] pointer-events-none animate-pulse-glow" />
@@ -186,10 +185,10 @@ export function Testimonial() {
         </div>
 
         {/* =========================================================================
-            ANIMATED TESTIMONIALS SWIPER SLIDER:
-            - 4 in Laptop View (lg: 4 slidesPerView)
-            - 3 in iPad & Tab View (sm/md: 3 slidesPerView)
-            - 2 in Mobile Phone View (default: 2 slidesPerView)
+            TESTIMONIALS SWIPER (only complete cards visible):
+            - 4 per view on laptop (>=1024px)
+            - 3 per view on tablet (>=640px)
+            - 2 per view on mobile
         ========================================================================= */}
         <div className="relative pt-1">
           <Swiper
@@ -202,6 +201,7 @@ export function Testimonial() {
               pauseOnMouseEnter: true,
             }}
             loop={true}
+            loopAdditionalSlides={4}
             navigation={{
               prevEl: prevRef.current,
               nextEl: nextRef.current,
@@ -212,27 +212,30 @@ export function Testimonial() {
             }}
             pagination={{
               clickable: true,
-              bulletClass: "swiper-pagination-bullet !bg-zinc-200 !w-2.5 !h-2.5 !transition-all !duration-300",
-              bulletActiveClass: "swiper-pagination-bullet-active !bg-gradient-to-r !from-rose-600 !to-pink-600 !w-8 !rounded-full !shadow-sm !shadow-rose-500/40",
+              bulletClass:
+                "swiper-pagination-bullet !bg-zinc-200 !w-2.5 !h-2.5 !transition-all !duration-300",
+              bulletActiveClass:
+                "swiper-pagination-bullet-active !bg-gradient-to-r !from-rose-600 !to-pink-600 !w-8 !rounded-full !shadow-sm !shadow-rose-500/40",
             }}
             slidesPerView={2}
-            spaceBetween={14}
+            slidesPerGroup={1}
+            spaceBetween={12}
             breakpoints={{
               640: {
                 slidesPerView: 3,
-                spaceBetween: 18,
+                spaceBetween: 16,
               },
               1024: {
                 slidesPerView: 4,
-                spaceBetween: 22,
+                spaceBetween: 20,
               },
             }}
-            className="pb-12 !overflow-visible"
+            className="!px-1 !pt-2 !pb-12"
           >
             {testimonialsData.map((item) => (
               <SwiperSlide key={item.id} className="h-auto">
                 {/* Animated Luxury Testimonial Card */}
-                <div className="group h-full bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-zinc-200/90 hover:border-rose-400/80 shadow-xs hover:shadow-2xl hover:shadow-rose-500/15 transition-all duration-400 p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden select-none hover:-translate-y-1.5">
+                <div className="group h-full bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl border border-zinc-200/90 hover:border-rose-400/80 shadow-xs hover:shadow-2xl hover:shadow-rose-500/15 transition-all duration-400 p-3 sm:p-5 flex flex-col justify-between relative overflow-hidden select-none hover:-translate-y-1.5">
                   {/* Top Glowing Animated Accent Bar */}
                   <div
                     className={`absolute top-0 inset-x-0 h-1 bg-gradient-to-r ${item.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`}
@@ -267,7 +270,7 @@ export function Testimonial() {
                     </div>
 
                     {/* Review Text */}
-                    <p className="text-zinc-600 text-[11px] sm:text-xs md:text-[13px] leading-relaxed line-clamp-3 font-normal group-hover:text-zinc-800 transition-colors">
+                    <p className="text-zinc-600 text-[11px] sm:text-xs md:text-[13px] leading-relaxed line-clamp-4 sm:line-clamp-3 font-normal group-hover:text-zinc-800 transition-colors">
                       &ldquo;{item.text}&rdquo;
                     </p>
                   </div>

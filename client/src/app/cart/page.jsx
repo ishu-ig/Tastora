@@ -449,21 +449,21 @@ export default function CartPage() {
     const { variant } = resolveProductAndVariant(dish);
     const stock = variant?.stockQuantity;
 
-    if (delta < 0 && quantity <= 1) return; // use the trash icon to remove
     if (delta > 0 && Number.isFinite(stock) && quantity >= stock) {
       setOrderError(`Only ${stock} in stock for ${dish.title}.`);
       return;
     }
     setOrderError("");
+    // updateQuantity already calls removeFromCart when next < 1
     updateQuantity(id, delta, dish);
   };
 
   const handleRemoveItem = (id) => {
-    if (window.confirm("Remove this item from cart?")) removeFromCart(id);
+    removeFromCart(id);
   };
 
   const handleClearCart = () => {
-    if (window.confirm("Remove all items from cart?")) clearCart();
+    clearCart();
   };
 
   const placeOrder = () => {

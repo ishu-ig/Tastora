@@ -82,25 +82,23 @@ function CartControl({
 // Live Order CTA — shown instead of Add/Stepper when an active order exists
 function LiveOrderCTA({ liveOrder, size }) {
   const sm = size === "sm";
-  const statusLabel = liveOrder?.status || "In Progress";
+  // Use dbId (Mongo _id) for the track URL; fall back to display id
+  const trackId = liveOrder?.dbId || liveOrder?.id || "";
+  const trackHref = trackId ? `/orders/track?id=${trackId}` : "/orders";
+
   return (
     <a
-      href="/orders"
+      href={trackHref}
       className={`flex items-center gap-1 sm:gap-1.5 rounded-xl sm:rounded-2xl font-black cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-md shadow-emerald-500/25 hover:shadow-emerald-500/35 relative overflow-hidden ${
-        sm ? "px-2 sm:px-3 h-7.5 sm:h-9 text-[10px] sm:text-xs" : "px-3 h-9 sm:h-10 text-xs sm:text-sm"
+        sm
+          ? "px-2.5 sm:px-3.5 h-7.5 sm:h-9 text-[11px] sm:text-xs"
+          : "px-4 h-9 sm:h-10 text-xs sm:text-sm"
       }`}
     >
       {/* Pulse ring */}
       <span className="absolute inset-0 rounded-xl sm:rounded-2xl bg-white/10 animate-pulse" />
-      <Navigation className={sm ? "w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 relative" : "w-3.5 h-3.5 shrink-0 relative"} />
-      <span className="relative leading-none">
-        {sm ? (
-          <span className="hidden sm:inline">Track</span>
-        ) : (
-          <span>Track Order</span>
-        )}
-        {sm && <span className="sm:hidden">Track</span>}
-      </span>
+      <Navigation className={sm ? "w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 relative" : "w-4 h-4 shrink-0 relative"} />
+      <span className="relative leading-none whitespace-nowrap">Track Order</span>
     </a>
   );
 }
