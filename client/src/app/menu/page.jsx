@@ -2233,7 +2233,6 @@ function MenuPageContent() {
                         onAddToCart={addToCart}
                         onToggleWishlist={addToWishlist}
                         onQuickView={setQuickViewDish}
-                        liveOrder={liveOrder}
                       />
                     );
                   })}

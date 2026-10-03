@@ -154,7 +154,6 @@ export function Menu() {
                 onAddToCart={addToCart}
                 onToggleWishlist={addToWishlist}
                 onQuickView={setQuickViewDish}
-                liveOrder={liveOrder}
               />
             );
           })}

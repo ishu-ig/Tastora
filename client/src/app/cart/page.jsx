@@ -84,6 +84,7 @@ export default function CartPage() {
     addAddress,
     isMember,
     membership,
+    liveOrder,
   } = useCart();
 
   // Cart lines, quantities and subtotal come from Redux (CartStateData -> MongoDB).
@@ -2122,16 +2123,37 @@ export default function CartPage() {
                     <p className="text-[11px] font-semibold text-red-600 text-center">{orderError}</p>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={placeOrder}
-                    disabled={placing}
-                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-sm shadow-xl shadow-rose-500/30 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                  >
-                    <ShoppingBag className="w-4 h-4" />
-                    <span>{placing ? "Placing order..." : "Proceed to Checkout"}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  {liveOrder ? (
+                    /* ── Live order blocker ── */
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex flex-col items-center gap-3 text-center">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span className="text-xs font-black text-emerald-800 uppercase tracking-wide">Active Order In Progress</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-700 font-medium leading-relaxed">
+                        You already have an order being prepared. Please wait for it to be delivered before placing a new one.
+                      </p>
+                      <a
+                        href={liveOrder.dbId ? `/orders/track?id=${liveOrder.dbId}` : "/orders"}
+                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-black text-sm shadow-md shadow-emerald-500/25 hover:from-emerald-500 hover:to-teal-400 active:scale-95 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Navigation className="w-4 h-4" />
+                        <span>Track Order · {liveOrder.status}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </a>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={placeOrder}
+                      disabled={placing}
+                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-sm shadow-xl shadow-rose-500/30 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      <span>{placing ? "Placing order..." : "Proceed to Checkout"}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
 
                   {/* Trust Badges */}
                   <div className="grid grid-cols-3 gap-2 pt-1">
@@ -2182,15 +2204,26 @@ export default function CartPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={placeOrder}
-              disabled={placing}
-              className="px-5 sm:px-7 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-rose-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60"
-            >
-              <span>{placing ? "Placing..." : "Checkout"}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {liveOrder ? (
+              <a
+                href={liveOrder.dbId ? `/orders/track?id=${liveOrder.dbId}` : "/orders"}
+                className="px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 shrink-0 relative overflow-hidden"
+              >
+                <span className="absolute inset-0 bg-white/10 animate-pulse rounded-2xl" />
+                <Navigation className="w-4 h-4 relative" />
+                <span className="relative">Track Order</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={placeOrder}
+                disabled={placing}
+                className="px-5 sm:px-7 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-amber-500 hover:from-rose-700 hover:to-amber-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-rose-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60"
+              >
+                <span>{placing ? "Placing..." : "Checkout"}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 

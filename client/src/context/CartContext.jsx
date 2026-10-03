@@ -170,10 +170,12 @@ export function CartProvider({ children }) {
           .catch(() => { });
       }
     } else {
-      // Logged out — reset to 0 (not 10; 10 was the new-user DB default,
-      // but showing it when logged out is misleading).
+      // Logged out — reset balance, membership, AND clear order/reservation history
+      // so a previous session's live order never leaks to a logged-out/new user.
       setCreditCoinsBalance(0);
       setMembership(null);
+      setOrdersHistory([]);
+      setReservationsHistory([]);
     }
   }, [authUser]);
 
@@ -491,8 +493,17 @@ export function CartProvider({ children }) {
     }
 
     syncBackendData();
+
+    // Poll every 30 seconds while user is logged in to keep order status fresh.
+    // This ensures the live order banner reflects server-side status changes
+    // (e.g. "In Kitchen" → "Out for Delivery") without a full page reload.
+    const pollInterval = setInterval(() => {
+      if (isSubscribed) syncBackendData();
+    }, 30000);
+
     return () => {
       isSubscribed = false;
+      clearInterval(pollInterval);
     };
   }, [activeUserId]);
 
@@ -824,11 +835,14 @@ export function CartProvider({ children }) {
     subtotal - discountAmount - creditCoinsDiscount + deliveryFee + taxAmount + activeTip
   );
 
-  // Live / active order — the most recent order that is not yet Delivered or Cancelled.
-  // While this exists, new orders should be blocked and the UI shows a tracking prompt.
+  // Live / active order — the most recent server-confirmed order (has dbId)
+  // that is not yet in a terminal state. Using only dbId orders ensures:
+  // 1. The order belongs to the current authenticated user (fetched by userId)
+  // 2. Local/optimistic orders never show as "live"
+  // 3. Stale localStorage orders from old sessions are excluded
   const TERMINAL_STATUSES = ["Delivered", "Cancelled", "Rejected", "Failed", "Refunded"];
   const liveOrder = ordersHistory.find(
-    (o) => o.status && !TERMINAL_STATUSES.includes(o.status)
+    (o) => o.dbId && o.status && !TERMINAL_STATUSES.includes(o.status)
   ) || null;
 
   return (
