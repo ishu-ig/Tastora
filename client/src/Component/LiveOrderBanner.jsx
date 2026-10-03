@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { Navigation, X, ChevronRight, Clock, CheckCircle2, ChefHat, Bike, PackageCheck } from "lucide-react";
 import { useCart } from "../context/CartContext";
+import { useAuth } from "../context/AuthContext";
 import { usePathname } from "next/navigation";
 
 // Map order statuses to step index and icon
@@ -25,11 +26,20 @@ function getStepIndex(status = "") {
 
 export function LiveOrderBanner() {
   const { liveOrder } = useCart();
+  const { user: authUser } = useAuth() || {};
   const pathname = usePathname();
   const [dismissed, setDismissed] = useState(false);
 
-  // Don't show on orders page itself, or if no live order, or dismissed
-  if (!liveOrder || dismissed || pathname?.startsWith("/orders")) return null;
+  // Reset dismissed state when the logged-in user changes (e.g. logout → login as different user)
+  const authUserId = authUser?._id || authUser?.id || null;
+  React.useEffect(() => { setDismissed(false); }, [authUserId]);
+
+  // Only show when:
+  // 1. A user is logged in
+  // 2. There is a live order
+  // 3. User hasn't dismissed it
+  // 4. Not already on the orders page
+  if (!authUser || !liveOrder || dismissed || pathname?.startsWith("/orders")) return null;
 
   const stepIndex = getStepIndex(liveOrder.status);
   const currentStep = STATUS_STEPS[stepIndex] || STATUS_STEPS[0];
