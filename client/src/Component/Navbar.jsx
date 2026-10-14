@@ -254,15 +254,38 @@ export function Navbar() {
     return [...productItems, ...comboItems, ...thaliItems];
   }, [reduxProducts, reduxCombos, reduxThalis]);
 
-  // Filtered search results
+  // Filtered search results — search across ALL types (menu, combo, thali)
   const filteredDishes = searchQuery.trim()
     ? dynamicSearchCatalog.filter(
       (dish) =>
         dish.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         dish.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
         dish.desc.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    : dynamicSearchCatalog.slice(0, 4);
+    ).sort((a, b) => {
+      // Rank: exact title match first, then starts-with, then includes
+      const q = searchQuery.toLowerCase();
+      const score = (item) => {
+        const t = item.title.toLowerCase();
+        if (t === q) return 4;
+        if (t.startsWith(q)) return 3;
+        if (t.includes(q)) return 2;
+        return 1;
+      };
+      return score(b) - score(a);
+    })
+    : dynamicSearchCatalog.slice(0, 6);
+
+  // Count per type for the dropdown header
+  const menuCount = filteredDishes.filter(d => d.id.startsWith("product-")).length;
+  const comboCount = filteredDishes.filter(d => d.id.startsWith("combo-")).length;
+  const thaliCount = filteredDishes.filter(d => d.id.startsWith("thali-")).length;
+
+  // Helper: badge color per type
+  const categoryBadgeClass = (id) => {
+    if (id.startsWith("combo-")) return "bg-amber-50 text-amber-700 border-amber-200/60";
+    if (id.startsWith("thali-")) return "bg-purple-50 text-purple-700 border-purple-200/60";
+    return "bg-rose-50 text-rose-700 border-rose-200/60";
+  };
 
   const submitSharedSearch = (event) => {
     if (event.key !== "Enter") return;
@@ -270,18 +293,14 @@ export function Navbar() {
     const query = searchQuery.trim();
     if (!query) return;
 
-    const rankedMatches = [...filteredDishes].sort((a, b) => {
-      const score = (item) => {
-        const title = item.title.toLowerCase();
-        const normalizedQuery = query.toLowerCase();
-        if (title === normalizedQuery) return 4;
-        if (title.startsWith(normalizedQuery)) return 3;
-        if (title.includes(normalizedQuery)) return 2;
-        return 1;
-      };
-      return score(b) - score(a);
-    });
-    const destination = rankedMatches[0]?.link || `/menu?search=${encodeURIComponent(query)}`;
+    // If there's exactly one top-ranked result go directly to it
+    const topMatch = filteredDishes[0];
+    const topScore = topMatch?.title.toLowerCase() === query.toLowerCase() ? 4
+      : topMatch?.title.toLowerCase().startsWith(query.toLowerCase()) ? 3 : 0;
+
+    const destination = topScore >= 3
+      ? topMatch.link
+      : `/search?q=${encodeURIComponent(query)}`;
     setSearchOpen(false);
     setMobileSearchOpen(false);
     router.push(destination);
@@ -902,21 +921,42 @@ export function Navbar() {
                 </div>
                 {searchOpen && searchQuery.trim() && (
                   <div className="absolute top-full left-0 right-0 mt-2 max-h-80 overflow-y-auto rounded-2xl bg-white border border-zinc-200 shadow-xl p-2 z-[70]">
-                    {filteredDishes.length ? filteredDishes.slice(0, 5).map((item) => (
-                      <Link
-                        key={item.id}
-                        href={item.link}
-                        onClick={() => setSearchOpen(false)}
-                        className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-rose-50"
-                      >
-                        <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-bold text-zinc-900">{item.title}</span>
-                          <span className="block truncate text-[10px] text-zinc-500">{item.category}</span>
-                        </span>
-                        {item.price && <span className="text-xs font-black text-rose-600">{item.price}</span>}
-                      </Link>
-                    )) : (
+                    {filteredDishes.length ? (
+                      <>
+                        <div className="flex items-center justify-between px-1 pb-1.5 mb-1.5 border-b border-zinc-100">
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Results ({filteredDishes.length})</span>
+                          <div className="flex items-center gap-1.5 text-[9px] font-bold">
+                            {menuCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60">{menuCount} Menu</span>}
+                            {comboCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">{comboCount} Combo</span>}
+                            {thaliCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60">{thaliCount} Thali</span>}
+                          </div>
+                        </div>
+                        {filteredDishes.slice(0, 6).map((item) => (
+                          <Link
+                            key={item.id}
+                            href={item.link}
+                            onClick={() => setSearchOpen(false)}
+                            className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-rose-50 transition-colors"
+                          >
+                            <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-bold text-zinc-900">{item.title}</span>
+                              <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded border ${categoryBadgeClass(item.id)}`}>{item.category}</span>
+                            </span>
+                            {item.price && <span className="text-xs font-black text-rose-600 shrink-0">{item.price}</span>}
+                          </Link>
+                        ))}
+                        {filteredDishes.length > 6 && (
+                          <Link
+                            href={`/search?q=${encodeURIComponent(searchQuery.trim())}`}
+                            onClick={() => setSearchOpen(false)}
+                            className="mt-1 w-full block text-center text-[11px] font-bold text-rose-600 hover:text-rose-700 py-1.5 rounded-xl hover:bg-rose-50 transition-colors"
+                          >
+                            See all {filteredDishes.length} results →
+                          </Link>
+                        )}
+                      </>
+                    ) : (
                       <p className="px-3 py-4 text-center text-xs text-zinc-500">No matching menu items, combos, or Thalis.</p>
                     )}
                   </div>
@@ -1086,7 +1126,17 @@ export function Navbar() {
                           ? `Results (${filteredDishes.length})`
                           : "Recommended for You"}
                       </span>
-                      <span className="text-[10px] text-zinc-400 font-medium">Menu, Combos &amp; Thalis</span>
+                      <div className="flex items-center gap-1.5 text-[9px] font-bold">
+                        {searchQuery.trim() ? (
+                          <>
+                            {menuCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/60">{menuCount} Menu</span>}
+                            {comboCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">{comboCount} Combo</span>}
+                            {thaliCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60">{thaliCount} Thali</span>}
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-zinc-400 font-medium">Menu, Combos &amp; Thalis</span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Results List */}
@@ -1114,7 +1164,7 @@ export function Navbar() {
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[9px] font-bold shrink-0">
+                                <span className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold shrink-0 ${categoryBadgeClass(dish.id)}`}>
                                   {dish.category}
                                 </span>
                                 <p className="text-[10px] text-zinc-400 truncate">{dish.desc}</p>
@@ -1123,6 +1173,17 @@ export function Navbar() {
                             <ArrowUpRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-rose-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all shrink-0" />
                           </Link>
                         ))}
+                        {/* "See all results" CTA for large result sets */}
+                        {filteredDishes.length >= 8 && searchQuery.trim() && (
+                          <Link
+                            href={`/search?q=${encodeURIComponent(searchQuery.trim())}`}
+                            onClick={() => setSearchOpen(false)}
+                            className="flex items-center justify-center gap-1.5 w-full py-2.5 mt-1 rounded-xl border border-dashed border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold transition-colors"
+                          >
+                            <Search className="w-3.5 h-3.5" />
+                            View all {filteredDishes.length} results for "{searchQuery.trim()}"
+                          </Link>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-6 px-4">

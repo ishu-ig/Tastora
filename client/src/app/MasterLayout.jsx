@@ -10,6 +10,7 @@ import { ArrowUp } from "lucide-react";
 import { CartProvider } from "../context/CartContext";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { LiveOrderBanner } from "../Component/LiveOrderBanner";
+import { SiteLoader } from "../Component/SiteLoader";
 
 // Renders the single global AuthModal — lives inside AuthProvider so it can read context
 function GlobalAuthModal() {
@@ -63,6 +64,8 @@ export default function MasterLayout({ children }) {
       <AuthProvider>
         <CartProvider>
           <div className="min-h-screen flex flex-col justify-between bg-white text-zinc-900 selection:bg-rose-500 selection:text-white">
+            {/* Full-screen food loading animation on initial page load */}
+            <SiteLoader />
             <Navbar />
             <main className="flex-grow">{children}</main>
             <Footer />

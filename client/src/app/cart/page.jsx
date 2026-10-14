@@ -50,8 +50,6 @@ import { mapProductToDish } from "@/lib/MenuDish";
 import { computeCartTotals, CART_RULES } from "@/lib/cartRules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation as SwiperNavigation } from "swiper/modules";
-import "swiper/css";
-import "swiper/css/navigation";
 
 export default function CartPage() {
   const GEOAPIFY_API_KEY = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY || "";

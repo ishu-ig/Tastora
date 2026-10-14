@@ -47,7 +47,6 @@ import { useAuth } from "../../context/AuthContext";
 import useCreditCoins from "../../hooks/useCreditCoins";
 import api from "../../lib/axiosInstance";
 import { fullMenuCatalog } from "../menu/page";
-import "leaflet/dist/leaflet.css";
 
 /* ------------------------------------------------------------------ */
 /* Small reusable pieces                                               */

@@ -47,10 +47,6 @@ import { openRazorpayModal } from "../../lib/razorpay";
 // Swiper Carousel Imports
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Pagination, Navigation, EffectFade } from "swiper/modules";
-import "swiper/css";
-import "swiper/css/pagination";
-import "swiper/css/navigation";
-import "swiper/css/effect-fade";
 
 // Restaurant Gallery Showcase for Swiper
 const galleryImages = [
